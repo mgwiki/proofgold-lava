@@ -1,0 +1,7 @@
+cd pgc
+make
+cd ../client
+./configure
+make
+
+See client/README.md for more information.

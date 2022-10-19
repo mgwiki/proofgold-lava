@@ -1,0 +1,13 @@
+type t;;
+external dbopen : string -> t = "c_gdbm_open";;
+external exists : t -> string -> bool = "c_gdbm_exists";;
+external replace : t -> string -> string -> unit = "c_gdbm_replace";;
+external delete : t -> string -> unit = "c_gdbm_delete";;
+external find : t -> string -> string = "c_gdbm_fetch";;
+external find_opt : t -> string -> string option = "c_gdbm_fetch_opt";;
+external find_unmarshal : t -> string -> 'a = "c_gdbm_fetch_unmarshal";;
+external find_unmarshal_opt : t -> string -> 'a option = "c_gdbm_fetch_unmarshal_opt";;
+external sync : t -> unit = "c_gdbm_sync";;
+external reorganize : t -> unit = "c_gdbm_reorganize";;
+external firstkey : t -> string = "c_gdbm_firstkey";;
+external nextkey : t -> string -> string = "c_gdbm_nextkey";;
