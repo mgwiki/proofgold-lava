@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2023 The Proofgold Lava developers *)
 (* Copyright (c) 2020-2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015-2017 The Qeditas developers *)
@@ -3178,6 +3178,269 @@ let initialize_commands () =
         let inthyid = hashtag (hashopair2 (Some(Checking.hfthyid)) pureid) 33l in
         Printf.fprintf oc "Pure Id: %s\nId in Theory: %s\nAddress in Theory: %s\n" (hashval_hexstring pureid) (hashval_hexstring inthyid) (addr_pfgaddrstr (hashval_term_addr inthyid))
       end);
+  ac "recenttxs" "recenttxs [<blockid> <num>]" "Report txs included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recenttxs with it to get more."
+    (fun oc al ->
+      let (blkid,n) =
+        match al with
+        | [h;ns] -> (hexstring_hashval h,int_of_string ns)
+        | [h] -> (hexstring_hashval h,10)
+        | (_::_) -> raise BadCommandForm
+        | [] ->
+           match get_bestblock_print_warnings oc with
+           | None -> raise (Failure "No blocks yet?")
+           | Some(h,_,_) -> (h,10)
+      in
+      Commands.report_recenttxs oc blkid n);
+  ac "recentdocs" "recentdocs [<blockid> <num>]" "Report txs publishing docs included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recentdocs with it to get more."
+    (fun oc al ->
+      let (blkid,n) =
+        match al with
+        | [h;ns] -> (hexstring_hashval h,int_of_string ns)
+        | [h] -> (hexstring_hashval h,10)
+        | (_::_) -> raise BadCommandForm
+        | [] ->
+           match get_bestblock_print_warnings oc with
+           | None -> raise (Failure "No blocks yet?")
+           | Some(h,_,_) -> (h,10)
+      in
+      Commands.report_recentdocs oc blkid n);
+  ac "recentthms" "recentthms [<blockid> <num>]" "Report txs with docs proving at least one thm included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recentthms with it to get more."
+    (fun oc al ->
+      let (blkid,n) =
+        match al with
+        | [h;ns] -> (hexstring_hashval h,int_of_string ns)
+        | [h] -> (hexstring_hashval h,10)
+        | (_::_) -> raise BadCommandForm
+        | [] ->
+           match get_bestblock_print_warnings oc with
+           | None -> raise (Failure "No blocks yet?")
+           | Some(h,_,_) -> (h,10)
+      in
+      Commands.report_recentthms oc blkid n);
+  ac "recentobjiddefined" "recentobjiddefined <objid> [<blockid> <num>]" "Report txs with docs defining the given object included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recentobjiddefinedthms with it to get more."
+    (fun oc al ->
+      match al with
+      | [] -> raise BadCommandForm
+      | (oid::ar) ->
+         let oid = hexstring_hashval oid in
+         let (blkid,n) =
+           match ar with
+           | [h;ns] -> (hexstring_hashval h,int_of_string ns)
+           | [h] -> (hexstring_hashval h,10)
+           | (_::_) -> raise BadCommandForm
+           | [] ->
+              match get_bestblock_print_warnings oc with
+              | None -> raise (Failure "No blocks yet?")
+              | Some(h,_,_) -> (h,10)
+         in
+         Commands.report_recentobjid_defined oc oid blkid n);
+  ac "recentpropidproven" "recentpropidproven <propid> [<blockid> <num>]" "Report txs with docs proving the given proposition included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recentpropidproven with it to get more."
+    (fun oc al ->
+      match al with
+      | [] -> raise BadCommandForm
+      | (pid::ar) ->
+         let pid = hexstring_hashval pid in
+         let (blkid,n) =
+           match ar with
+           | [h;ns] -> (hexstring_hashval h,int_of_string ns)
+           | [h] -> (hexstring_hashval h,10)
+           | (_::_) -> raise BadCommandForm
+           | [] ->
+              match get_bestblock_print_warnings oc with
+              | None -> raise (Failure "No blocks yet?")
+              | Some(h,_,_) -> (h,10)
+         in
+         Commands.report_recentpropid_proven oc pid blkid n);
+  ac "recentbountiesplaced" "recentbountiesplaced [<blockid> <num>]" "Report txs placing bounties included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recentbountiesplaced with it to get more."
+    (fun oc al ->
+      let (blkid,n) =
+        match al with
+        | [h;ns] -> (hexstring_hashval h,int_of_string ns)
+        | [h] -> (hexstring_hashval h,10)
+        | (_::_) -> raise BadCommandForm
+        | [] ->
+           match get_bestblock_print_warnings oc with
+           | None -> raise (Failure "No blocks yet?")
+           | Some(h,_,_) -> (h,10)
+      in
+      Commands.report_recentbountiesplaced oc blkid n);
+  ac "mgdoc" "mgdoc <pubaddr|blockid|txid> <mgoutfile> [<num>]" "Create an approximate Megalodon version of the nth document published at the address or in the block or tx.\n"
+    (fun oc al ->
+      match al with
+      | [hh;fn] ->
+         if String.length hh > 60 then (** hashval, not address **)
+           begin
+             let n = 1 in
+             let cnt = ref 0 in
+             let h = hexstring_hashval hh in
+             try
+               let bd = DbBlockDelta.dbget h in
+               List.iter
+                 (fun ((_,tauout),_) ->
+                   List.iter
+                     (fun (_,(_,u)) ->
+                       match u with
+                       | DocPublication(_,_,th,dl) ->
+                          incr cnt;
+                          if !cnt = n then
+                            begin
+                              let f = open_out fn in
+                              mgdoc_out f th dl;
+                              close_out f
+                            end
+                       | _ -> ())
+                     tauout)
+                 bd.blockdelta_stxl
+             with Not_found ->
+               try
+                 let ((_,tauout),_) = DbSTx.dbget h in
+                 List.iter
+                   (fun (_,(_,u)) ->
+                     match u with
+                     | DocPublication(_,_,th,dl) ->
+                        incr cnt;
+                        if !cnt = n then
+                          begin
+                            let f = open_out fn in
+                            mgdoc_out f th dl;
+                            close_out f
+                          end
+                     | _ -> ())
+                   tauout
+               with Not_found ->
+                 Printf.fprintf oc "Do not know %s\n" hh
+           end
+         else
+           begin
+             let alpha = pfgaddrstr_addr hh in
+             if not (pubaddr_p alpha) then raise (Failure "not a pubaddr");
+             let lr = get_ledgerroot (get_bestblock_print_warnings oc) in
+             let hl = ctree_lookup_addr_assets true true (CHash(lr)) (0,alpha) in
+             match hl with
+             | HCons(a,_) ->
+                begin
+                  match a with
+                  | (_,_,_,DocPublication(_,_,th,dl)) ->
+                     let f = open_out fn in
+                     mgdoc_out f th dl;
+                     close_out f
+                  | _ ->
+                     raise (Failure "something other than a document at address")
+                end
+             | HConsH(ah,_) ->
+                begin
+                  let a = DbAsset.dbget ah in
+                  match a with
+                  | (_,_,_,DocPublication(_,_,th,dl)) ->
+                     let f = open_out fn in
+                     mgdoc_out f th dl;
+                     close_out f
+                  | _ ->
+                     raise (Failure "something other than a document at address")
+                end
+             | HNil -> raise (Failure "no document at address")
+             | HHash(hlh,_) ->
+                begin
+                  let (ah,_) = DbHConsElt.dbget hlh in
+                  let a = DbAsset.dbget ah in
+                  match a with
+                  | (_,_,_,DocPublication(_,_,th,dl)) ->
+                     let f = open_out fn in
+                     mgdoc_out f th dl;
+                     close_out f
+                  | _ ->
+                     raise (Failure "something other than a document at address")
+                end
+           end
+      | [hh;fn;n] ->
+         begin
+           let n = int_of_string n in
+           let cnt = ref 0 in
+           let h = hexstring_hashval hh in
+           try
+             let bd = DbBlockDelta.dbget h in
+             List.iter
+               (fun ((_,tauout),_) ->
+                 List.iter
+                   (fun (_,(_,u)) ->
+                     match u with
+                     | DocPublication(_,_,th,dl) ->
+                        incr cnt;
+                        if !cnt = n then
+                          begin
+                            let f = open_out fn in
+                            mgdoc_out f th dl;
+                            close_out f
+                          end
+                     | _ -> ())
+                   tauout)
+               bd.blockdelta_stxl
+           with Not_found ->
+             try
+               let ((_,tauout),_) = DbSTx.dbget h in
+               List.iter
+                 (fun (_,(_,u)) ->
+                   match u with
+                   | DocPublication(_,_,th,dl) ->
+                      incr cnt;
+                      if !cnt = n then
+                        begin
+                          let f = open_out fn in
+                          mgdoc_out f th dl;
+                          close_out f
+                        end
+                   | _ -> ())
+                 tauout
+             with Not_found ->
+               Printf.fprintf oc "Do not know %s\n" hh
+         end
+      | _ -> raise BadCommandForm);
+  ac "querymg" "querymg <hashval or address or int[block height]> [<blockid or ledgerroot>]" "Get information (in json format) about some item.\nSpecial Notation is used to present types and terms (and proofs are omitted).\nThis is intended to support exporers.\nThe querymg command gives more detailed information if -extraindex is set to true.\n"
+    (fun oc al ->
+      mgnice := true;
+      mgnicestp := true;
+      mgnatnotation := true;
+      match al with
+      | [h] ->
+	 begin
+	   try
+	     let blkh = Int64.of_string h in
+	     let j = Commands.query_blockheight blkh in
+	     print_jsonval oc j;
+	     Printf.fprintf oc "\n"
+	   with Failure(_) ->
+	     let j = Commands.query h in
+	     print_jsonval oc j;
+	     Printf.fprintf oc "\n"
+	 end
+      | [h;kh] ->
+	 let k = hexstring_hashval kh in
+	 begin
+	   try
+	     let (lbk,ltx) = get_burn k in
+	     let (_,lmedtm,burned,(txid1,vout1),_,_,blkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
+	     let (_,_,lr,_,_) = Db_validheadervals.dbget (hashpair lbk ltx) in
+	     let pbh = Some(k,Poburn(lbk,ltx,lmedtm,burned,txid1,vout1)) in
+	     let j = Commands.query_at_block h pbh lr blkh in
+	     print_jsonval oc j;
+	     Printf.fprintf oc "\n"
+	   with Not_found ->
+             if DbCTreeAtm.dbexists k then
+	       begin
+		 let j = Commands.query_at_block h None k (-1L) in
+		 print_jsonval oc j;
+		 Printf.fprintf oc "\n"
+	       end
+	     else if DbCTreeElt.dbexists k then
+	       begin
+		 let j = Commands.query_at_block h None k (-1L) in
+		 print_jsonval oc j;
+		 Printf.fprintf oc "\n"
+	       end
+	     else
+	       raise (Failure ("could not interpret " ^ kh ^ " as a block or ledger root"))
+	 end
+      | _ -> raise BadCommandForm);
   ac "query" "query <hashval or address or int[block height]> [<blockid or ledgerroot>]" "Get information (in json format) about some item.\nThis is intended to support exporers.\nThe query command gives more detailed information if -extraindex is set to true."
     (fun oc al ->
       match al with

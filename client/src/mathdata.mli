@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2023 The Proofgold Lava developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2016 The Qeditas developers *)
 (* Copyright (c) 2017-2018 The Dalilcoin developers *)
@@ -124,6 +124,10 @@ val print_tp : stp -> int -> unit
 
 val invert_neg_prop : trm -> trm
 
+val mgnice : bool ref
+val mgnicestp : bool ref
+val mgnatnotation : bool ref
+
 val json_theoryspec : theoryspec -> jsonval
 val json_signaspec : hashval option -> signaspec -> jsonval
 val json_doc : hashval option -> doc -> jsonval
@@ -135,3 +139,5 @@ val trm_from_json : jsonval -> trm
 val theoryspec_from_json : jsonval -> theoryspec
 val signaspec_from_json : jsonval -> signaspec
 val doc_from_json : jsonval -> doc
+
+val mgdoc_out : out_channel -> hashval option -> doc -> unit

@@ -1,3 +1,4 @@
+(* Copyright (c) 2021-2023 The Proofgold Lava developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2016 The Qeditas developers *)
 (* Copyright (c) 2017-2018 The Dalilcoin developers *)

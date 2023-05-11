@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2023 The Proofgold Lava developers *)
 (* Copyright (c) 2020-2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015-2016 The Qeditas developers *)
@@ -3687,3 +3687,127 @@ let createmultisig m jpks =
       let pubkeys = List.map (fun j -> match j with JsonStr(s) -> (s,hexstring_pubkey s) | _ -> raise (Failure "expected an array of pubkeys")) jpkl in
       createmultisig2 m pubkeys
   | _ -> raise (Failure "expected an array of pubkeys")
+
+let report_recenttxs_filtered p oc h n =
+  let reptxs = ref [] in
+  let i = ref 0 in
+  let (bhd,_) = DbBlockHeader.dbget h in
+  let bd = Block.DbBlockDelta.dbget h in
+  let blktm = bhd.timestamp in
+  let (par,blkh) =
+    match bhd.prevblockhash with
+    | Some(_,Poburn(h,k,_,_,_,_)) ->
+       let (pbh,_,_,_,_,_,blkh) = Db_outlinevals.dbget (hashpair h k) in
+       (Some(pbh,h,k),Int64.add blkh 1L)
+    | None -> (None,1L)
+  in
+  let blkidh = hashval_hexstring h in
+  List.iter
+    (fun (((_,tauout),_) as stau) ->
+      if List.exists p tauout then
+        let stxid = hashstx stau in
+        reptxs := JsonObj([("stx",JsonStr(hashval_hexstring stxid));("block",JsonStr(blkidh));("height",JsonNum(Int64.to_string blkh));("time",JsonNum(Int64.to_string blktm))])::!reptxs;
+        incr i)
+    bd.blockdelta_stxl;
+  let finish pbh =
+    match pbh with
+    | None ->
+       print_jsonval oc (JsonObj([("recenttxs",JsonArr(!reptxs))]));
+       Printf.fprintf oc "\n"
+    | Some(pbh) ->
+       print_jsonval oc (JsonObj([("recenttxs",JsonArr(!reptxs));("prevblock",JsonStr(hashval_hexstring pbh))]));
+       Printf.fprintf oc "\n"
+  in
+  match par with
+  | None -> finish None
+  | Some(pbh,plbk,pltx) ->
+     if !i < n then
+       let rec f lbk ltx =
+         let (bh,_,_,_,par,_,blkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
+         let (bhd,_) = DbBlockHeader.dbget bh in
+         let bd = Block.DbBlockDelta.dbget bh in
+         let blktm = bhd.timestamp in
+         List.iter
+           (fun (((_,tauout),_) as stau) ->
+             if List.exists p tauout then
+               let stxid = hashstx stau in
+               reptxs := JsonObj([("stx",JsonStr(hashval_hexstring stxid));("block",JsonStr(blkidh));("height",JsonNum(Int64.to_string blkh));("time",JsonNum(Int64.to_string blktm))])::!reptxs;
+               incr i)
+           bd.blockdelta_stxl;
+         match par with
+         | Some(plbk,pltx) ->
+            if !i < n then
+              f plbk pltx
+            else
+              let (pbh,_,_,_,_,_,_) = Db_outlinevals.dbget (hashpair plbk pltx) in
+              finish (Some(pbh))
+         | None ->
+            finish None
+       in
+       f plbk pltx
+     else
+       finish (Some(pbh))
+
+let report_recenttxs oc h n =
+  let p _ = true in
+  report_recenttxs_filtered p oc h n
+
+let report_recentdocs oc h n =
+  let p (_,(_,u)) =
+    match u with
+    | DocPublication(_,_,_,_) -> true
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
+let report_recentthms oc h n =
+  let p (_,(_,u)) =
+    match u with
+    | DocPublication(_,_,_,dl) ->
+       List.exists (fun di -> match di with Logic.Docpfof(_,_) -> true | _ -> false) dl
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
+let report_recentbountiesplaced oc h n =
+  let p (_,(_,u)) =
+    match u with
+    | Bounty(_) -> true
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
+let report_recentobjid_defined oc oid h n =
+  let p (_,(_,u)) =
+    match u with
+    | DocPublication(_,_,th,dl) ->
+       List.exists
+         (fun di ->
+           match di with
+             Logic.Docdef(a,m) ->
+              let trmroot = Mathdata.tm_hashroot m in
+              let objid = hashtag (hashopair2 th (hashpair trmroot (Mathdata.hashtp a))) 32l in
+              objid = oid
+           | _ -> false)
+         dl
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
+let report_recentpropid_proven oc pid h n =
+  let p (_,(_,u)) =
+    match u with
+    | DocPublication(_,_,th,dl) ->
+       List.exists
+         (fun di ->
+           match di with
+             Logic.Docpfof(p,_) ->
+              let trmroot = Mathdata.tm_hashroot p in
+              let propid = hashtag (hashopair2 th trmroot) 33l in
+              propid = pid
+           | _ -> false)
+         dl
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
