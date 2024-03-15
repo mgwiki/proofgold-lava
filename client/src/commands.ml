@@ -3586,7 +3586,23 @@ let reportpubs oc f lr =
 		  | Logic.Docparam(h,a) -> Printf.fprintf f "Param %s (%s) : %s\n" (hashval_hexstring h) (hashval_hexstring (hashtag (hashopair2 thyh (hashpair h (Mathdata.hashtp a))) 32l)) (stp_str a)
 		  | Logic.Docdef(a,m) -> Printf.fprintf f "Def %s (%s) : %s := %s\n" (hashval_hexstring (Mathdata.tm_hashroot m)) (hashval_hexstring (hashtag (hashopair2 thyh (hashpair (Mathdata.tm_hashroot m) (Mathdata.hashtp a))) 32l)) (stp_str a) (trm_str m)
 		  | Logic.Docknown(m) -> Printf.fprintf f "Known %s (%s) : %s\n" (hashval_hexstring (Mathdata.tm_hashroot m)) (hashval_hexstring (hashtag (hashopair2 thyh (Mathdata.tm_hashroot m)) 33l)) (trm_str m)
-		  | Logic.Docpfof(m,_) -> Printf.fprintf f "Theorem %s (%s) : %s\n" (hashval_hexstring (Mathdata.tm_hashroot m)) (hashval_hexstring (hashtag (hashopair2 thyh (Mathdata.tm_hashroot m)) 33l)) (trm_str m)
+		  | Logic.Docpfof(m,d) ->
+                     Printf.fprintf f "Theorem %s (%s) : %s\n" (hashval_hexstring (Mathdata.tm_hashroot m)) (hashval_hexstring (hashtag (hashopair2 thyh (Mathdata.tm_hashroot m)) 33l)) (trm_str m);
+                     Printf.fprintf f "(PID-TRMROOT \"%s\" \"%s\")\n" (hashval_hexstring (hashtag (hashopair2 thyh (Mathdata.tm_hashroot m)) 33l)) (hashval_hexstring (Mathdata.tm_hashroot m));
+                     let usesknowns = ref [] in
+                     let rec g d =
+                       match d with
+                       | Logic.Known(h) -> if not (List.mem h !usesknowns) then usesknowns := h :: !usesknowns
+                       | Logic.PrAp(d1,d2) -> g d1; g d2
+                       | Logic.TmAp(d1,_) -> g d1
+                       | Logic.PrLa(_,d1) -> g d1
+                       | Logic.TmLa(_,d1) -> g d1
+                       | _ -> ()
+                     in
+                     g d;
+                     Printf.fprintf f "(PFUSES \"%s\"" (hashval_hexstring (Mathdata.tm_hashroot m));
+                     List.iter (fun h -> Printf.fprintf f " \"%s\"" (hashval_hexstring h)) !usesknowns;
+                     Printf.fprintf f ")\n";
 		  | Logic.Docconj(m) -> Printf.fprintf f "Conjecture %s (%s) : %s\n" (hashval_hexstring (Mathdata.tm_hashroot m)) (hashval_hexstring (hashtag (hashopair2 thyh (Mathdata.tm_hashroot m)) 33l)) (trm_str m))
 		(List.rev d)
 	    end
@@ -3794,6 +3810,28 @@ let report_recentobjid_defined oc oid h n =
   in
   report_recenttxs_filtered p oc h n
 
+let report_recenttrmroot_defined oc oid h n =
+  let p (_,(_,u)) =
+    match u with
+    | DocPublication(_,_,th,dl) ->
+       List.exists
+         (fun di ->
+           match di with
+             Logic.Docdef(a,m) ->
+              let trmroot = Mathdata.tm_hashroot m in
+              trmroot = oid
+           | Logic.Docpfof(p,_) ->
+              let trmroot = Mathdata.tm_hashroot p in
+              trmroot = oid
+           | Logic.Docconj(p) ->
+              let trmroot = Mathdata.tm_hashroot p in
+              trmroot = oid
+           | _ -> false)
+         dl
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
 let report_recentpropid_proven oc pid h n =
   let p (_,(_,u)) =
     match u with
@@ -3810,4 +3848,95 @@ let report_recentpropid_proven oc pid h n =
     | _ -> false
   in
   report_recenttxs_filtered p oc h n
+
+let report_bounties_collected oc h =
+  let spentfrom : (addr,hashval) Hashtbl.t = Hashtbl.create 1000 in
+  let ownsproppid : (addr,hashval) Hashtbl.t = Hashtbl.create 1000 in
+  let ownsprop : (addr,hashval) Hashtbl.t = Hashtbl.create 1000 in
+  let ownsnegprop : (addr,hashval) Hashtbl.t = Hashtbl.create 1000 in
+  let bountyat : (addr,int64) Hashtbl.t = Hashtbl.create 1000 in
+  let reptxs = ref [] in
+  let (bhd,_) = DbBlockHeader.dbget h in
+  let bd = Block.DbBlockDelta.dbget h in
+  let blktm = bhd.timestamp in
+  let (par,blkh) =
+    match bhd.prevblockhash with
+    | Some(_,Poburn(h,k,_,_,_,_)) ->
+       let (pbh,_,_,_,_,_,blkh) = Db_outlinevals.dbget (hashpair h k) in
+       (Some(pbh,h,k),Int64.add blkh 1L)
+    | None -> (None,1L)
+  in
+  let blkidh = hashval_hexstring h in
+  List.iter
+    (fun (((tauin,tauout),_) as stau) ->
+      let stxid = hashstx stau in
+      List.iter
+        (fun (alpha,_) ->
+          Hashtbl.add spentfrom alpha stxid)
+        tauin;
+      List.iter
+        (fun (alpha,(_,u)) ->
+          match u with
+          | Bounty(v) when v > 0L ->
+             (try let v1 = Hashtbl.find bountyat alpha in Hashtbl.replace bountyat alpha (Int64.add v1 v) with Not_found -> Hashtbl.add bountyat alpha v)
+          | OwnsProp(pid,_,_) -> Hashtbl.replace ownsproppid alpha pid; Hashtbl.add ownsprop alpha stxid
+          | OwnsNegProp -> Hashtbl.add ownsnegprop alpha stxid
+          | _ -> ())
+        tauout)
+    bd.blockdelta_stxl;
+  (**  to do: go through everything and then collect which bounties seem to have been spent and by proving which theory. probably need ownsprop and ownsnegprop info too **)
+  match par with
+  | None -> ()
+  | Some(pbh,plbk,pltx) ->
+     let rec f lbk ltx =
+       let (bh,_,_,_,par,_,blkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
+       let (bhd,_) = DbBlockHeader.dbget bh in
+       let bd = Block.DbBlockDelta.dbget bh in
+       let blktm = bhd.timestamp in
+       List.iter
+         (fun (((tauin,tauout),_) as stau) ->
+           let stxid = hashstx stau in
+           List.iter
+             (fun (alpha,_) ->
+               Hashtbl.add spentfrom alpha stxid)
+             tauin;
+           List.iter
+             (fun (alpha,(_,u)) ->
+               match u with
+               | Bounty(v) when v > 0L ->
+                  (try let v1 = Hashtbl.find bountyat alpha in Hashtbl.replace bountyat alpha (Int64.add v1 v) with Not_found -> Hashtbl.add bountyat alpha v)
+               | OwnsProp(pid,_,_) -> Hashtbl.replace ownsproppid alpha pid; Hashtbl.add ownsprop alpha stxid
+               | OwnsNegProp -> Hashtbl.add ownsnegprop alpha stxid
+               | _ -> ())
+             tauout)
+         bd.blockdelta_stxl;
+         match par with
+         | Some(plbk,pltx) ->
+            f plbk pltx
+         | None -> ()
+     in
+     f plbk pltx;
+     Hashtbl.iter
+       (fun alpha v ->
+         if Hashtbl.mem spentfrom alpha then
+           begin
+             try
+               let pid = Hashtbl.find ownsproppid alpha in
+               Printf.fprintf oc "(BOUNTY \"%s\" %Ld (POS \"%s\") (TXS" (addr_pfgaddrstr alpha) v (hashval_hexstring pid);
+               List.iter
+                 (fun h -> Printf.fprintf oc " \"%s\"" (hashval_hexstring h))
+                 (Hashtbl.find_all ownsprop alpha);
+               Printf.fprintf oc "))\n"
+             with Not_found ->
+                   if Hashtbl.mem ownsnegprop alpha then
+                     begin
+                       Printf.fprintf oc "(BOUNTY \"%s\" %Ld NEG (TXS" (addr_pfgaddrstr alpha) v;
+                       List.iter
+                         (fun h -> Printf.fprintf oc " \"%s\"" (hashval_hexstring h))
+                         (Hashtbl.find_all ownsnegprop alpha);
+                       Printf.fprintf oc "))\n"
+                     end
+           end
+       )
+       bountyat
 

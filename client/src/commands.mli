@@ -107,6 +107,8 @@ val report_recentdocs : out_channel -> hashval -> int -> unit
 val report_recentthms : out_channel -> hashval -> int -> unit
 val report_recentbountiesplaced : out_channel -> hashval -> int -> unit
 
+val report_recenttrmroot_defined : out_channel -> hashval -> hashval -> int -> unit
 val report_recentobjid_defined : out_channel -> hashval -> hashval -> int -> unit
 val report_recentpropid_proven : out_channel -> hashval -> hashval -> int -> unit
 
+val report_bounties_collected : out_channel -> hashval -> unit
