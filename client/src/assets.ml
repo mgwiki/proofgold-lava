@@ -573,3 +573,8 @@ let asset_from_json j =
       (aid,bday,obl,u)
   | _ ->
       raise (Failure("not an asset"))
+
+let spent_table_refreshing : bool ref = ref true
+let spent_table_bkp : (hashval,(hashval * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
+let spent_table : (hashval,(hashval * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
+let spent_history_table : (hashval,((hashval * hashval * hashval option) list * hashval option)) Hashtbl.t = Hashtbl.create 10

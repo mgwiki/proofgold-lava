@@ -3479,6 +3479,24 @@ let initialize_commands () =
                Printf.fprintf oc "Do not know %s\n" hh
          end
       | _ -> raise BadCommandForm);
+  ac "assetspent" "assetspent <assetid>" "Return whether or not the asset has been spent and give data if it has been. This is intended for explorers."
+    (fun oc al ->
+      match al with
+      | [h] ->
+         let hh = hexstring_hashval h in
+         begin
+           try
+             let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
+             let (lkey,pfgbh,otxid) = Hashtbl.find my_spent_table hh in
+             match otxid with
+             | Some(txid) ->
+                Printf.printf "%s was spent by tx %s in block %s\n" h (hashval_hexstring txid) (hashval_hexstring pfgbh)
+             | None ->
+                Printf.printf "%s was used to stake block %s\n" h (hashval_hexstring pfgbh)
+           with Not_found ->
+             Printf.printf "%s is unspent, assuming it is an asset at all\n" h
+         end
+      | _ -> raise BadCommandForm);
   ac "querymg" "querymg <hashval or address or int[block height]> [<blockid or ledgerroot>]" "Get information (in json format) about some item.\nSpecial Notation is used to present types and terms (and proofs are omitted).\nThis is intended to support exporers.\nThe querymg command gives more detailed information if -extraindex is set to true.\n"
     (fun oc al ->
       mgnice := true;
@@ -5560,6 +5578,87 @@ let init_ledger () =
             | _ -> Printf.printf "Init thy tree root mismatch."; flush stdout; !exitfn 1
     end;;
 
+let rec refresh_explorer_tables_rec lkey =
+  try
+    let (spenthere,par) = Hashtbl.find spent_history_table lkey in
+    List.iter
+      (fun (aid,pfgbh,pfgtxid) -> Hashtbl.add spent_table aid (lkey,pfgbh,pfgtxid))
+      spenthere;
+    match par with
+    | Some(plkey) -> refresh_explorer_tables_rec plkey
+    | None -> ()
+  with Not_found -> raise (Failure "unexpected failure")
+
+let refresh_explorer_tables () =
+  try
+    let (bb,_) = get_bestblock () in
+    match bb with
+    | None -> ()
+    | Some(dbh,lbk,ltx) ->
+       let tmstart = Unix.time () in
+       Printf.printf "Refreshing Explorer Tables\n";
+       spent_table_refreshing := true;
+       Hashtbl.clear spent_table_bkp;
+       Hashtbl.iter (fun k v -> Hashtbl.add spent_table_bkp k v) spent_table;
+       Hashtbl.clear spent_table;
+       refresh_explorer_tables_rec (hashpair lbk ltx);
+       spent_table_refreshing := false;
+       Printf.printf "Finished refreshing Explorer Tables %f seconds\n" (Unix.time () -. tmstart);
+  with
+  | Not_found -> ()
+  | Failure(ex) ->
+     Printf.printf "Failure (%s) while refreshing explorer tables. Using bkp.\n" ex;
+     Hashtbl.clear spent_table;
+     Hashtbl.iter (fun k v -> Hashtbl.add spent_table k v) spent_table_bkp;
+     spent_table_refreshing := false
+
+let refresh_explorer_tables_sometimes () =
+  while true do
+    Thread.delay 3600.0;
+    refresh_explorer_tables ()
+  done
+
+let rec init_explorer_tables_rec lkey =
+  let (pfgbh,_,_,_,par,_,pblkhght) = Db_outlinevals.dbget lkey in
+  let (bhd,_) = DbBlockHeader.dbget pfgbh in
+  let bd = Block.DbBlockDelta.dbget pfgbh in
+  let spenthereinfo =
+    ref (if bhd.pureburn = None then
+           [(bhd.stakeassetid,pfgbh,None)]
+         else
+           [])
+  in
+  List.iter
+    (fun stau ->
+      let stxid = hashstx stau in
+      let (tau,_) = stau in
+      let (tauin,tauout) = tau in
+      List.iter
+        (fun (alpha,aid) -> spenthereinfo := (aid,pfgbh,Some(stxid))::!spenthereinfo)
+        tauin)
+    bd.blockdelta_stxl;
+  match par with
+  | Some(plbk,pltx) ->
+     Hashtbl.add spent_history_table lkey (!spenthereinfo,Some(hashpair plbk pltx));
+     init_explorer_tables_rec (hashpair plbk pltx);
+  | None ->
+     Hashtbl.add spent_history_table lkey (!spenthereinfo,None);;
+
+let init_explorer_tables () =
+  let tmstart = Unix.time () in
+  Printf.printf "Creating Explorer Tables\n";
+  let (bb,_) = get_bestblock () in
+  try
+    match bb with
+    | None ->
+       Printf.printf "Could not determine best block\n";
+       raise Not_found
+    | Some(dbh,lbk,ltx) ->
+       init_explorer_tables_rec (hashpair lbk ltx);
+       Printf.printf "Finished creating Explorer Tables: %f seconds\n" (Unix.time () -. tmstart);
+  with Not_found ->
+    Printf.printf "Failed to create Explorer Tables: %f seconds\n" (Unix.time () -. tmstart);;
+
 let set_signal_handlers () =
 (*  let generic_signal_handler str sg =
     Utils.log_string (Printf.sprintf "thread %d got signal %d (%s) - terminating\n" (Thread.id (Thread.self ())) sg str);
@@ -6009,12 +6108,14 @@ let main () =
       match Unix.fork() with
       | 0 ->
 	  initialize();
+          init_explorer_tables ();
 	  if not !Config.offline then
 	    begin
 	      initnetwork !Utils.log;
 	      if !Config.staking then stkth := Some(Thread.create stakingthread ());
 	      if !Config.swapping then swpth := Some(Thread.create swappingthread ());
 	      if not !Config.ltcoffline then ltc_listener_th := Some(Thread.create ltc_listener ());
+              ignore (Thread.create refresh_explorer_tables_sometimes ());
 	    end;
 	  daemon_readevalloop ()
       | pid -> Printf.printf "Proofgold daemon process %d started.\n" pid
@@ -6022,6 +6123,8 @@ let main () =
   else
     begin
       initialize();
+      init_explorer_tables ();
+      refresh_explorer_tables ();
       set_signal_handlers();
       if not !Config.offline then
 	begin
@@ -6029,6 +6132,7 @@ let main () =
 	  if !Config.staking then stkth := Some(Thread.create stakingthread ());
 	  if !Config.swapping then swpth := Some(Thread.create swappingthread ());
 	  if not !Config.ltcoffline then ltc_listener_th := Some(Thread.create ltc_listener ());
+          ignore (Thread.create refresh_explorer_tables_sometimes ());
 	end;
       readevalloop()
     end;;

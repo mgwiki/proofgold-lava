@@ -32,6 +32,28 @@ let unconfswapredemptions : (hashval * int64 * stx) list ref = ref [];;
 
 let nextverifyledgertime : float ref = ref 0.0
 
+let extend_explorer_info lkey pfgbh bhd bd =
+  let spenthereinfo =
+    ref (if bhd.pureburn = None then
+           [(bhd.stakeassetid,pfgbh,None)]
+         else
+           [])
+  in
+  List.iter
+    (fun stau ->
+      let stxid = hashstx stau in
+      let (tau,_) = stau in
+      let (tauin,tauout) = tau in
+      List.iter
+        (fun (alpha,aid) -> spenthereinfo := (aid,pfgbh,Some(stxid))::!spenthereinfo)
+        tauin)
+    bd.blockdelta_stxl;
+  match bhd.prevblockhash with
+  | Some(_,Poburn(plbk,pltx,_,_,_,_)) ->
+     Hashtbl.add spent_history_table lkey (!spenthereinfo,Some(hashpair plbk pltx));
+  | None ->
+     Hashtbl.add spent_history_table lkey (!spenthereinfo,None)
+
 let swapmatchoffer_ltccontracttx ltctxh ys litoshisout =
   let ltccontracttxb = Buffer.create 200 in
   Buffer.add_string ltccontracttxb "\002\000\000\000\001";
@@ -621,7 +643,8 @@ let rec process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd
             begin
               match valid_block tht sgt currhght csm tar ((bhd,bhs),bd) lmedtm burned txid1 vout1 with
               | Some(newtht,newsigt) ->
-	         Db_validblockvals.dbput (hashpair lbh ltxh) true;
+                 let lkey = hashpair lbh ltxh in
+	         Db_validblockvals.dbput lkey true;
 	         sync_last_height := max !sync_last_height currhght;
 	         update_theories thtr tht newtht;
 	         update_signatures sgtr sgt newsigt;
@@ -630,6 +653,7 @@ let rec process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd
 	         if dbp then
 	           begin
 	             DbBlockDelta.dbput h bd;
+                     extend_explorer_info lkey h bhd bd;
                      rem_missing_delta h
 	           end;
 	         if forw then

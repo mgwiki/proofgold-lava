@@ -119,3 +119,8 @@ val json_asset : asset -> jsonval
 val obligation_from_json : jsonval option -> obligation
 val preasset_from_json : jsonval -> preasset
 val asset_from_json : jsonval -> asset
+
+val spent_table_refreshing : bool ref
+val spent_table_bkp : (hashval,(hashval * hashval * hashval option)) Hashtbl.t
+val spent_table : (hashval,(hashval * hashval * hashval option)) Hashtbl.t
+val spent_history_table : (hashval,((hashval * hashval * hashval option) list * hashval option)) Hashtbl.t
