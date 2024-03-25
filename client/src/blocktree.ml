@@ -32,21 +32,31 @@ let unconfswapredemptions : (hashval * int64 * stx) list ref = ref [];;
 
 let nextverifyledgertime : float ref = ref 0.0
 
-let extend_explorer_info lkey pfgbh bhd bd =
+let extend_explorer_info lkey pfgbh bhd bd blkhght =
   let spenthereinfo =
     ref (if bhd.pureburn = None then
            [(bhd.stakeassetid,pfgbh,None)]
          else
            [])
   in
+  let handle_out otx (alpha,(aid,bday,obl,u)) =
+    match u with
+    | Bounty(v) ->
+       Hashtbl.add bounty_history_table lkey (alpha,aid,v,pfgbh,otx)
+    | _ -> ()
+  in
+  let cstktxh = hashtx ([(p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)],bd.stakeoutput) in
+  List.iter (handle_out None) (add_vout blkhght cstktxh bd.stakeoutput 0l);
   List.iter
     (fun stau ->
       let stxid = hashstx stau in
       let (tau,_) = stau in
+      let txh = hashtx tau in
       let (tauin,tauout) = tau in
       List.iter
         (fun (alpha,aid) -> spenthereinfo := (aid,pfgbh,Some(stxid))::!spenthereinfo)
-        tauin)
+        tauin;
+      List.iter (handle_out (Some(stxid))) (add_vout blkhght txh tauout 0l))
     bd.blockdelta_stxl;
   match bhd.prevblockhash with
   | Some(_,Poburn(plbk,pltx,_,_,_,_)) ->
@@ -653,7 +663,7 @@ let rec process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd
 	         if dbp then
 	           begin
 	             DbBlockDelta.dbput h bd;
-                     extend_explorer_info lkey h bhd bd;
+                     extend_explorer_info lkey h bhd bd currhght;
                      rem_missing_delta h
 	           end;
 	         if forw then

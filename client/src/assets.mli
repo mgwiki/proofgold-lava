@@ -124,3 +124,7 @@ val spent_table_refreshing : bool ref
 val spent_table_bkp : (hashval,(hashval * hashval * hashval option)) Hashtbl.t
 val spent_table : (hashval,(hashval * hashval * hashval option)) Hashtbl.t
 val spent_history_table : (hashval,((hashval * hashval * hashval option) list * hashval option)) Hashtbl.t
+val bounty_sorted_refreshing : bool ref
+val bounty_sorted_bkp : (addr * hashval * int64 * hashval * hashval option) list ref
+val bounty_sorted : (addr * hashval * int64 * hashval * hashval option) list ref
+val bounty_history_table : (hashval,(addr * hashval * int64 * hashval * hashval option)) Hashtbl.t

@@ -578,3 +578,7 @@ let spent_table_refreshing : bool ref = ref true
 let spent_table_bkp : (hashval,(hashval * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
 let spent_table : (hashval,(hashval * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
 let spent_history_table : (hashval,((hashval * hashval * hashval option) list * hashval option)) Hashtbl.t = Hashtbl.create 10
+let bounty_sorted_refreshing : bool ref = ref true
+let bounty_sorted_bkp : (addr * hashval * int64 * hashval * hashval option) list ref = ref []
+let bounty_sorted : (addr * hashval * int64 * hashval * hashval option) list ref = ref []
+let bounty_history_table : (hashval,(addr * hashval * int64 * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10

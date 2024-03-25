@@ -3479,6 +3479,39 @@ let initialize_commands () =
                Printf.fprintf oc "Do not know %s\n" hh
          end
       | _ -> raise BadCommandForm);
+  ac "querybounties" "querybounties <n> <m>" "Return info about m bounties after the top n (of all time)"
+    (fun oc al ->
+      match al with
+      | [n;m] ->
+         let n = int_of_string n in
+         let m = int_of_string m in
+         let bs = if !bounty_sorted_refreshing then !bounty_sorted_bkp else !bounty_sorted in
+         let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
+         let lbs = List.length bs in
+         Printf.printf "Note: There have been a total of %d bounties in all of history.\n" lbs;
+         let rec g l m =
+           if m > 0 then
+             match l with
+             | (alpha,aid,v,blk,otx)::r ->
+                if Hashtbl.mem my_spent_table aid then
+                  Printf.printf "Bounty %s at %s (spent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha)
+                else
+                  Printf.printf "Bounty %s at %s (unspent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
+                g r (m-1)
+             | _ -> ()
+           else
+             ()
+         in
+         let rec f l n m =
+           if n > 0 then
+             match l with
+             | x::r -> f r (n-1) m
+             | _ -> ()
+           else
+             g l m
+         in
+         f bs n m
+      | _ -> raise BadCommandForm);
   ac "assetspent" "assetspent <assetid>" "Return whether or not the asset has been spent and give data if it has been. This is intended for explorers."
     (fun oc al ->
       match al with
@@ -5584,6 +5617,8 @@ let rec refresh_explorer_tables_rec lkey =
     List.iter
       (fun (aid,pfgbh,pfgtxid) -> Hashtbl.add spent_table aid (lkey,pfgbh,pfgtxid))
       spenthere;
+    let bountyhere = Hashtbl.find_all bounty_history_table lkey in
+    bounty_sorted := List.merge (fun (_,_,v1,_,_) (_,_,v2,_,_) -> compare v2 v1) bountyhere !bounty_sorted;
     match par with
     | Some(plkey) -> refresh_explorer_tables_rec plkey
     | None -> ()
@@ -5597,12 +5632,17 @@ let refresh_explorer_tables () =
     | Some(dbh,lbk,ltx) ->
        let tmstart = Unix.time () in
        Printf.printf "Refreshing Explorer Tables\n";
+       let lkey = hashpair lbk ltx in
        spent_table_refreshing := true;
+       bounty_sorted_refreshing := true;
        Hashtbl.clear spent_table_bkp;
        Hashtbl.iter (fun k v -> Hashtbl.add spent_table_bkp k v) spent_table;
+       bounty_sorted_bkp := !bounty_sorted;
        Hashtbl.clear spent_table;
-       refresh_explorer_tables_rec (hashpair lbk ltx);
+       bounty_sorted := [];
+       refresh_explorer_tables_rec lkey;
        spent_table_refreshing := false;
+       bounty_sorted_refreshing := false;
        Printf.printf "Finished refreshing Explorer Tables %f seconds\n" (Unix.time () -. tmstart);
   with
   | Not_found -> ()
@@ -5610,7 +5650,9 @@ let refresh_explorer_tables () =
      Printf.printf "Failure (%s) while refreshing explorer tables. Using bkp.\n" ex;
      Hashtbl.clear spent_table;
      Hashtbl.iter (fun k v -> Hashtbl.add spent_table k v) spent_table_bkp;
-     spent_table_refreshing := false
+     bounty_sorted := !bounty_sorted_bkp;
+     spent_table_refreshing := false;
+     bounty_sorted_refreshing := false
 
 let refresh_explorer_tables_sometimes () =
   while true do
@@ -5628,14 +5670,24 @@ let rec init_explorer_tables_rec lkey =
          else
            [])
   in
+  let handle_out otx (alpha,(aid,bday,obl,u)) =
+    match u with
+    | Bounty(v) ->
+       Hashtbl.add bounty_history_table lkey (alpha,aid,v,pfgbh,otx)
+    | _ -> ()
+  in
+  let cstktxh = hashtx ([(p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)],bd.stakeoutput) in
+  List.iter (handle_out None) (add_vout pblkhght cstktxh bd.stakeoutput 0l);
   List.iter
     (fun stau ->
       let stxid = hashstx stau in
       let (tau,_) = stau in
+      let txh = hashtx tau in
       let (tauin,tauout) = tau in
       List.iter
         (fun (alpha,aid) -> spenthereinfo := (aid,pfgbh,Some(stxid))::!spenthereinfo)
-        tauin)
+        tauin;
+      List.iter (handle_out (Some(stxid))) (add_vout pblkhght txh tauout 0l))
     bd.blockdelta_stxl;
   match par with
   | Some(plbk,pltx) ->

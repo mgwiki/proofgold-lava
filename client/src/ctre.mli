@@ -205,5 +205,3 @@ exception CorruptedCTreeAtm of hashval
 
 val verifyhlist_h : hashval -> addr -> unit
 val verifyledger_h : hashval -> unit
-
-val add_vout : int64 -> hashval -> addr_preasset list -> ((int * addr) * asset) list
