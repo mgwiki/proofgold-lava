@@ -43,6 +43,70 @@ let extend_explorer_info lkey pfgbh bhd bd blkhght =
     match u with
     | Bounty(v) ->
        Hashtbl.add bounty_history_table lkey (alpha,aid,v,pfgbh,otx)
+    | TheoryPublication(beta,_,thyspec) ->
+       begin
+         let thyh = hashtheory (theoryspec_theory thyspec) in
+         let cnt = ref 0 in
+         List.iter
+           (fun i ->
+             match i with
+             | Logic.Thyprim(a) ->
+                let m = Logic.Prim(!cnt) in
+                let h = tm_hashroot m in
+                incr cnt;
+                Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,true)
+             | Thyaxiom(p) ->
+                let h = tm_hashroot p in
+                begin
+                  match p with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx);
+                end;
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                Hashtbl.add prop_history_table lkey (propid,thyh,h,true)
+             | Thydef(a,m) ->
+                let h = tm_hashroot m in
+                begin
+                  match m with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                end;
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false))
+           thyspec
+       end
+    | DocPublication(beta,_,thyh,dl) ->
+       begin
+         List.iter
+           (fun i ->
+             match i with
+             | Logic.Docpfof(p,_) ->
+                let h = tm_hashroot p in
+                begin
+                  match p with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx);
+                end;
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                Hashtbl.add prop_history_table lkey (propid,thyh,h,false)
+             | Docdef(a,m) ->
+                let h = tm_hashroot m in
+                begin
+                  match m with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                end;
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false)
+             | _ -> ())
+           dl
+       end
     | _ -> ()
   in
   let cstktxh = hashtx ([(p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)],bd.stakeoutput) in

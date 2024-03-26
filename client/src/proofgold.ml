@@ -3479,6 +3479,78 @@ let initialize_commands () =
                Printf.fprintf oc "Do not know %s\n" hh
          end
       | _ -> raise BadCommandForm);
+  ac "querytermroot" "querytermroot <hashval>" "Return info given a term root"
+    (fun oc al ->
+      match al with
+      | [hh] ->
+         let h = hexstring_hashval hh in
+         let printedterm = ref false in
+         List.iter
+           (fun (m,aid,thyh,pfgbh,otx) ->
+             if not !printedterm then
+               begin
+                 Printf.fprintf oc "Term root of underlying term:\n";
+                 let j = json_trm m in
+                 print_jsonval oc j;
+                 Printf.fprintf oc "\n";
+                 printedterm := true;
+               end;
+             let thystr =
+               match thyh with
+               | Some(h) -> Printf.sprintf "theory %s" (hashval_hexstring h)
+               | None -> "the empty theory"
+             in
+             let txstr =
+               match otx with
+               | Some(txid) -> Printf.sprintf "tx %s" (hashval_hexstring txid)
+               | None -> "coinstake tx"
+             in
+             Printf.fprintf oc "Published in %s by asset with id %s in block %s by %s\n" thystr (hashval_hexstring aid) (hashval_hexstring pfgbh) txstr)
+           (Hashtbl.find_all term_info h)
+      | _ -> raise BadCommandForm);
+  ac "queryobjid" "queryobjid <hashval>" "Return info given a obj id"
+    (fun oc al ->
+      match al with
+      | [hh] ->
+         begin
+           let h = hexstring_hashval hh in
+           let (thyh,a,tmroot,prim) = Hashtbl.find obj_info h in
+           let thystr =
+             match thyh with
+             | Some(h) -> Printf.sprintf "theory %s" (hashval_hexstring h)
+             | None -> "the empty theory"
+           in
+           if prim then
+             Printf.fprintf oc "Primitive object in theory %s with type:\n" thystr
+           else
+             Printf.fprintf oc "Defined object in theory %s with type:\n" thystr;
+           let j = json_stp a in
+           print_jsonval oc j;
+           Printf.fprintf oc "\n";
+           Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
+         end
+      | _ -> raise BadCommandForm);
+  ac "querypropid" "querypropid <hashval>" "Return info given a prop id"
+    (fun oc al ->
+      match al with
+      | [hh] ->
+         begin
+           let h = hexstring_hashval hh in
+           try
+             let (thyh,tmroot,prim) = Hashtbl.find prop_info h in
+             let thystr =
+               match thyh with
+               | Some(h) -> Printf.sprintf "theory %s" (hashval_hexstring h)
+               | None -> "the empty theory"
+             in
+             if prim then
+               Printf.fprintf oc "Axiom in theory %s\n" thystr
+             else
+               Printf.fprintf oc "Theorem in theory %s\n" thystr;
+             Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
+           with Not_found -> Printf.printf "Not a known propid\n"
+         end
+      | _ -> raise BadCommandForm);
   ac "querybounties" "querybounties <n> <m>" "Return info about m bounties after the top n (of all time)"
     (fun oc al ->
       match al with
@@ -3506,6 +3578,80 @@ let initialize_commands () =
            if n > 0 then
              match l with
              | x::r -> f r (n-1) m
+             | _ -> ()
+           else
+             g l m
+         in
+         f bs n m
+      | _ -> raise BadCommandForm);
+  ac "queryopenbounties" "queryopenbounties <n> <m>" "Return info about m bounties after the top n (of all time)"
+    (fun oc al ->
+      match al with
+      | [n;m] ->
+         let n = int_of_string n in
+         let m = int_of_string m in
+         let bs = if !bounty_sorted_refreshing then !bounty_sorted_bkp else !bounty_sorted in
+         let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
+         let rec g l m =
+           if m > 0 then
+             match l with
+             | (alpha,aid,v,blk,otx)::r ->
+                if Hashtbl.mem my_spent_table aid then
+                  g r m
+                else
+                  begin
+                    Printf.printf "Open Bounty %s at %s\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
+                    g r (m-1)
+                  end
+             | _ -> ()
+           else
+             ()
+         in
+         let rec f l n m =
+           if n > 0 then
+             match l with
+             | (_,aid,_,_,_)::r ->
+                if Hashtbl.mem my_spent_table aid then
+                  f r n m
+                else
+                  f r (n-1) m
+             | _ -> ()
+           else
+             g l m
+         in
+         f bs n m
+      | _ -> raise BadCommandForm);
+  ac "querycollectedbounties" "querycollectedbounties <n> <m>" "Return info about m collected bounties after the top n (of all time)"
+    (fun oc al ->
+      match al with
+      | [n;m] ->
+         let n = int_of_string n in
+         let m = int_of_string m in
+         let bs = if !bounty_sorted_refreshing then !bounty_sorted_bkp else !bounty_sorted in
+         let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
+         let rec g l m =
+           if m > 0 then
+             match l with
+             | (alpha,aid,v,blk,otx)::r ->
+                if Hashtbl.mem my_spent_table aid then
+                  begin
+                    Printf.printf "Bounty %s at %s (spent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
+                    g r (m-1)
+                  end
+                else
+                  g r m
+             | _ -> ()
+           else
+             ()
+         in
+         let rec f l n m =
+           if n > 0 then
+             match l with
+             | (_,aid,_,_,_)::r ->
+                if Hashtbl.mem my_spent_table aid then
+                  f r (n-1) m
+                else
+                  f r n m
              | _ -> ()
            else
              g l m
@@ -5617,8 +5763,17 @@ let rec refresh_explorer_tables_rec lkey =
     List.iter
       (fun (aid,pfgbh,pfgtxid) -> Hashtbl.add spent_table aid (lkey,pfgbh,pfgtxid))
       spenthere;
-    let bountyhere = Hashtbl.find_all bounty_history_table lkey in
+    let bountyhere = List.sort (fun (_,_,v1,_,_) (_,_,v2,_,_) -> compare v2 v1) (Hashtbl.find_all bounty_history_table lkey) in
     bounty_sorted := List.merge (fun (_,_,v1,_,_) (_,_,v2,_,_) -> compare v2 v1) bountyhere !bounty_sorted;
+    List.iter
+      (fun (h,m,aid,thyh,pfgbh,otx) -> Hashtbl.add term_info h (m,aid,thyh,pfgbh,otx))
+      (Hashtbl.find_all term_history_table lkey);
+    List.iter
+      (fun (objid,thyh,a,h,prim) -> Hashtbl.add obj_info objid (thyh,a,h,prim))
+      (Hashtbl.find_all obj_history_table lkey);
+    List.iter
+      (fun (propid,thyh,h,prim) -> Hashtbl.add prop_info propid (thyh,h,prim))
+      (Hashtbl.find_all prop_history_table lkey);
     match par with
     | Some(plkey) -> refresh_explorer_tables_rec plkey
     | None -> ()
@@ -5635,14 +5790,25 @@ let refresh_explorer_tables () =
        let lkey = hashpair lbk ltx in
        spent_table_refreshing := true;
        bounty_sorted_refreshing := true;
+       term_info_refreshing := true;
        Hashtbl.clear spent_table_bkp;
        Hashtbl.iter (fun k v -> Hashtbl.add spent_table_bkp k v) spent_table;
        bounty_sorted_bkp := !bounty_sorted;
+       Hashtbl.clear term_info_bkp;
+       Hashtbl.clear obj_info_bkp;
+       Hashtbl.clear prop_info_bkp;
+       Hashtbl.iter (fun k v -> Hashtbl.add term_info_bkp k v) term_info;
+       Hashtbl.iter (fun k v -> Hashtbl.add obj_info_bkp k v) obj_info;
+       Hashtbl.iter (fun k v -> Hashtbl.add prop_info_bkp k v) prop_info;
+       Hashtbl.clear term_info;
+       Hashtbl.clear obj_info;
+       Hashtbl.clear prop_info;
        Hashtbl.clear spent_table;
        bounty_sorted := [];
        refresh_explorer_tables_rec lkey;
        spent_table_refreshing := false;
        bounty_sorted_refreshing := false;
+       term_info_refreshing := false;
        Printf.printf "Finished refreshing Explorer Tables %f seconds\n" (Unix.time () -. tmstart);
   with
   | Not_found -> ()
@@ -5650,9 +5816,16 @@ let refresh_explorer_tables () =
      Printf.printf "Failure (%s) while refreshing explorer tables. Using bkp.\n" ex;
      Hashtbl.clear spent_table;
      Hashtbl.iter (fun k v -> Hashtbl.add spent_table k v) spent_table_bkp;
+     Hashtbl.clear term_info;
+     Hashtbl.iter (fun k v -> Hashtbl.add term_info k v) term_info_bkp;
+     Hashtbl.clear obj_info;
+     Hashtbl.iter (fun k v -> Hashtbl.add obj_info k v) obj_info_bkp;
+     Hashtbl.clear prop_info;
+     Hashtbl.iter (fun k v -> Hashtbl.add prop_info k v) prop_info_bkp;
      bounty_sorted := !bounty_sorted_bkp;
      spent_table_refreshing := false;
-     bounty_sorted_refreshing := false
+     bounty_sorted_refreshing := false;
+     term_info_refreshing := false
 
 let refresh_explorer_tables_sometimes () =
   while true do
@@ -5674,6 +5847,70 @@ let rec init_explorer_tables_rec lkey =
     match u with
     | Bounty(v) ->
        Hashtbl.add bounty_history_table lkey (alpha,aid,v,pfgbh,otx)
+    | TheoryPublication(beta,_,thyspec) ->
+       begin
+         let thyh = hashtheory (theoryspec_theory thyspec) in
+         let cnt = ref 0 in
+         List.iter
+           (fun i ->
+             match i with
+             | Logic.Thyprim(a) ->
+                let m = Logic.Prim(!cnt) in
+                let h = tm_hashroot m in
+                incr cnt;
+                Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,true)
+             | Thyaxiom(p) ->
+                let h = tm_hashroot p in
+                begin
+                  match p with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx);
+                end;
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                Hashtbl.add prop_history_table lkey (propid,thyh,h,true)
+             | Thydef(a,m) ->
+                let h = tm_hashroot m in
+                begin
+                  match m with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                end;
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false))
+           thyspec
+       end
+    | DocPublication(beta,_,thyh,dl) ->
+       begin
+         List.iter
+           (fun i ->
+             match i with
+             | Logic.Docpfof(p,_) ->
+                let h = tm_hashroot p in
+                begin
+                  match p with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx);
+                end;
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                Hashtbl.add prop_history_table lkey (propid,thyh,h,false)
+             | Docdef(a,m) ->
+                let h = tm_hashroot m in
+                begin
+                  match m with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                end;
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false)
+             | _ -> ())
+           dl
+       end
     | _ -> ()
   in
   let cstktxh = hashtx ([(p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)],bd.stakeoutput) in

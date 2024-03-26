@@ -5488,8 +5488,6 @@ let mgimplop : (hashval,unit) Hashtbl.t = Hashtbl.create 100;;
 let mglegend : (hashval,string) Hashtbl.t = Hashtbl.create 100;;
 let mglegendp : (hashval,string) Hashtbl.t = Hashtbl.create 100;;
 
-
-
 let mgrootassoc : (hashval,hashval) Hashtbl.t = Hashtbl.create 100;;
 Hashtbl.add mgrootassoc (hexstring_hashval "c8ed7d3ad63a4a29ebc88ac0ccb02bfd5f4c0141eebc8a7a349ed7115a3a3eb9") (hexstring_hashval "be3dc11d683b255bfbd9127adb3c6087d074a17cb0e31c91d602b5ae49893e97");;
 Hashtbl.add mgrootassoc (hexstring_hashval "cf0ad1ee32827718afb13bd3eaf6f0a23dac224e237a5287cf6770bed71314d0") (hexstring_hashval "8a2958081ef9384f7ae14223d1b2eae8a7b40e054a6e8404700b3282c5cc73fc");;

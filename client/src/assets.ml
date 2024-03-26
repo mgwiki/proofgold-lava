@@ -574,11 +574,22 @@ let asset_from_json j =
   | _ ->
       raise (Failure("not an asset"))
 
-let spent_table_refreshing : bool ref = ref true
+let spent_table_refreshing : bool ref = ref false
 let spent_table_bkp : (hashval,(hashval * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
 let spent_table : (hashval,(hashval * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
 let spent_history_table : (hashval,((hashval * hashval * hashval option) list * hashval option)) Hashtbl.t = Hashtbl.create 10
-let bounty_sorted_refreshing : bool ref = ref true
+let bounty_sorted_refreshing : bool ref = ref false
 let bounty_sorted_bkp : (addr * hashval * int64 * hashval * hashval option) list ref = ref []
 let bounty_sorted : (addr * hashval * int64 * hashval * hashval option) list ref = ref []
 let bounty_history_table : (hashval,(addr * hashval * int64 * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
+let term_info_refreshing : bool ref = ref false
+let term_info_bkp : (hashval,trm * hashval * hashval option * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
+let term_info : (hashval,trm * hashval * hashval option * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
+let obj_info_bkp : (hashval,hashval option * stp * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let obj_info : (hashval,hashval option * stp * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let prop_info_bkp : (hashval,hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let prop_info : (hashval,hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let term_history_table : (hashval,hashval * trm * hashval * hashval option * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
+let obj_history_table : (hashval,hashval * hashval option * stp * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let prop_history_table : (hashval,hashval * hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
+

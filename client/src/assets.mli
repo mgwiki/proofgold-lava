@@ -128,3 +128,13 @@ val bounty_sorted_refreshing : bool ref
 val bounty_sorted_bkp : (addr * hashval * int64 * hashval * hashval option) list ref
 val bounty_sorted : (addr * hashval * int64 * hashval * hashval option) list ref
 val bounty_history_table : (hashval,(addr * hashval * int64 * hashval * hashval option)) Hashtbl.t
+val term_info_refreshing : bool ref
+val term_info_bkp : (hashval,trm * hashval * hashval option * hashval * hashval option) Hashtbl.t
+val term_info : (hashval,trm * hashval * hashval option * hashval * hashval option) Hashtbl.t
+val obj_info_bkp : (hashval,hashval option * stp * hashval * bool) Hashtbl.t
+val obj_info : (hashval,hashval option * stp * hashval * bool) Hashtbl.t
+val prop_info_bkp : (hashval,hashval option * hashval * bool) Hashtbl.t
+val prop_info : (hashval,hashval option * hashval * bool) Hashtbl.t
+val term_history_table : (hashval,hashval * trm * hashval * hashval option * hashval * hashval option) Hashtbl.t
+val obj_history_table : (hashval,hashval * hashval option * stp * hashval * bool) Hashtbl.t
+val prop_history_table : (hashval,hashval * hashval option * hashval * bool) Hashtbl.t
