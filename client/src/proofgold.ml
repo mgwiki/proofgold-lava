@@ -6312,6 +6312,8 @@ let initialize () =
       end;
     Printf.fprintf sout "Loading wallet\n"; flush sout;
     Commands.load_wallet();
+    Printf.fprintf sout "Initializing historic swap info\n"; flush sout;
+    initialize_historic_swap_info ();
     let efn = !exitfn in
     exitfn := (fun n -> (try Commands.save_wallet() with _ -> ()); efn n);
     if !Config.swapping then

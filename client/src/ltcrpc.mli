@@ -121,3 +121,5 @@ val blnum64 : int64 -> int list
 val broadcast_alert_via_ltc : char -> string -> string
 val ltc_process_alert_tx : string -> unit
 val search_ltc_bootstrap_url : unit -> unit
+
+val initialize_historic_swap_info : unit -> unit
