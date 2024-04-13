@@ -1055,6 +1055,54 @@ let initialize_commands () =
         (fun (lalpha,pr,minatoms,maxatoms) ->
           Printf.fprintf oc "%f %s [%s,%s]\n" pr lalpha (bars_of_atoms minatoms) (bars_of_atoms maxatoms))
         !Commands.swapselloffers);
+  ac "recenthistoricbuyoffers" "recenthistoricbuyoffers <days to skip> <num days to include>" "recenthistoricbuyoffers prints info about swap offers from a number of days, after skipping some number of most recent days.\nEG: recenthistoricbuyoffers 0 90 gives info for the past 90 days.\nrecenthistoricbuyoffers 90 30 gives info for the 30 days before the past 90 days.\n"
+    (fun oc al ->
+      match al with
+      | [sd;nd] ->
+         let s = int_of_string sd in
+         let n = int_of_string nd in
+         let currtm = Int64.of_float (Unix.time()) in
+         let endtm = Int64.sub currtm (Int64.mul (Int64.of_int s) 86400L) in
+         let begtm = Int64.sub currtm (Int64.mul (Int64.of_int (s + n)) 86400L) in
+         let rec f l =
+           match l with
+           | [] -> ()
+           | (tm,_,price,_)::r ->
+              if tm > begtm then f r;
+              if tm > begtm && tm <= endtm then
+                let gtm = Unix.gmtime (Int64.to_float tm) in
+                Printf.fprintf oc "%04d-%02d-%02d %f\n"
+                  (1900+gtm.Unix.tm_year) (1+gtm.Unix.tm_mon) gtm.Unix.tm_mday price
+         in
+         f !allswapbuyoffers_by_rev_time
+      | _ -> raise BadCommandForm);
+  ac "highesthistoricbuyoffers" "highesthistoricbuyoffers <entries to skip> <entries to print>" "highesthistoricbuyoffers prints info about swap offers with the highest price, after skipping a given number.\n"
+    (fun oc al ->
+      match al with
+      | [sd;nd] ->
+         let s = int_of_string sd in
+         let n = int_of_string nd in
+         let rec g l n =
+           if n > 0 then
+             match l with
+             | [] -> ()
+             | (tm,_,price,_)::r ->
+                let gtm = Unix.gmtime (Int64.to_float tm) in
+                Printf.fprintf oc "%04d-%02d-%02d %f\n"
+                  (1900+gtm.Unix.tm_year) (1+gtm.Unix.tm_mon) gtm.Unix.tm_mday price;
+                g r (n-1)
+         in
+         let rec f l s =
+           if s <= 0 then
+             g l n
+           else
+             match l with
+             | [] -> ()
+             | (tm,_,price,_)::r ->
+                f r (s-1)
+         in
+         f !allswapbuyoffers_by_price s
+      | _ -> raise BadCommandForm);
   ac "buyoffers" "buyoffers"
     "Show all active buy offers, indicating which are by the local node."
     (fun oc al ->

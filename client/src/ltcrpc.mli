@@ -107,6 +107,9 @@ type swapbuyoffertype =
   | SimpleSwapBuyOffer of string * addr * int64 * int64
 
 val swapbuyoffers : (hashval * float * swapbuyoffertype) list ref
+val allswapbuyoffers_by_rev_time : (int64 * hashval * float * swapbuyoffertype) list ref
+val allswapbuyoffers_by_forw_time : (int64 * hashval * float * swapbuyoffertype) list ref
+val allswapbuyoffers_by_price : (int64 * hashval * float * swapbuyoffertype) list ref
 val ltc_scanforswapbuyoffers : int -> unit
 val ltc_getswaptransactioninfo : string -> unit
 val ltc_cancelswapbuyoffer : string -> unit
