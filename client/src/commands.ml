@@ -1010,8 +1010,8 @@ let assets_at_address_in_ledger_json raiseempty alpha par ledgerroot blkh =
 	      assets_at_address_in_ledger_json_history alpha par
 	with Not_found -> []
   in
-  let jhl = assets_at_address_in_ledger_json_history alpha par in
-  if not (jhl = []) then jal := ("historic",JsonArr(jhl))::!jal;
+(*  let jhl = assets_at_address_in_ledger_json_history alpha par in
+  if not (jhl = []) then jal := ("historic",JsonArr(jhl))::!jal; *)
   (!jal,!jwl)
 
 let printassets_in_ledger oc ledgerroot blkhght =
@@ -2887,9 +2887,159 @@ let query_at_block q pbh ledgerroot blkh =
 	  try
             let d = termaddr_addr (hashval_be160 h) in
             let j = proofgold_addr_jsoninfo true d pbh ledgerroot blkh in
-	    dbentries := JsonObj([("type",JsonStr("termid"));("termaddress",JsonStr(addr_pfgaddrstr d));("termaddressinfo",j)])::!dbentries
+	    dbentries := JsonObj([("type",JsonStr("termid"));("termaddress",JsonStr(addr_pfgaddrstr d));("termaddressinfo",j)])::!dbentries;
 	  with _ -> ()
 	end;
+        begin
+          try
+            let m = Hashtbl.find term_info_hf h in
+            match m with
+            | Prim(i) ->
+               dbentries := JsonObj([("type",JsonStr("termroot"));("hfbuiltin",JsonBool(true));("hfprimnum",JsonNum(Printf.sprintf "%d" i));("primname",JsonStr(Mathdata.hfprimnamesa.(i)))])::!dbentries
+            | _ ->
+               dbentries := JsonObj([("type",JsonStr("termroot"));("hfbuiltin",JsonBool(true));("trmpres",JsonStr(Mathdata.mg_nice_trm (Some(Mathdata.hfthyroot)) m))])::!dbentries;
+          with Not_found -> ()
+        end;
+        begin
+          try
+            let (a,tmroot) = Hashtbl.find obj_info_hf h in
+            dbentries := JsonObj([("type",JsonStr("obj"));("hfbuiltin",JsonBool(true));("stppres",JsonStr(Mathdata.mg_nice_stp (Some(Mathdata.hfthyroot)) a));("termroot",JsonStr(hashval_hexstring tmroot))])::!dbentries
+          with Not_found -> ()
+        end;
+        begin
+          try
+            let tmroot = Hashtbl.find prop_info_hf h in
+            dbentries := JsonObj([("type",JsonStr("prop"));("hfbuiltin",JsonBool(true));("termroot",JsonStr(hashval_hexstring tmroot))])::!dbentries
+          with Not_found -> ()
+        end;
+        begin
+          try
+            let (ah,pfgbh,otx) = Hashtbl.find (if !asset_id_hash_refreshing then asset_id_hash_table_bkp else asset_id_hash_table) h in
+            match otx with
+            | None ->
+               dbentries := JsonObj([("type",JsonStr("assetid"));("assethash",JsonStr(hashval_hexstring ah));("block",JsonStr(hashval_hexstring pfgbh))])::!dbentries
+            | Some(txid) ->
+               dbentries := JsonObj([("type",JsonStr("assetid"));("assethash",JsonStr(hashval_hexstring ah));("block",JsonStr(hashval_hexstring pfgbh));("tx",JsonStr(hashval_hexstring txid))])::!dbentries
+          with Not_found -> ()
+        end;
+        List.iter
+          (fun (m,aid,thyh,pfgbh,otx) ->
+            let thystr =
+              match thyh with
+              | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+              | None -> []
+            in
+            let txstr =
+              match otx with
+              | Some(txid) -> [("tx",JsonStr(hashval_hexstring txid))]
+              | None -> [("block",JsonStr(hashval_hexstring pfgbh))]
+            in
+            let creatorobj =
+              try
+                let (aid,bday,beta) = Hashtbl.find created_obj_info h in
+                [("creatorasobj",JsonObj([("creatoraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let ownerobj =
+              try
+                let (aid,bday,beta,gamma,r) = Hashtbl.find owns_obj_info h in
+                [("ownerasobj",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let creatorprop =
+              try
+                let (aid,bday,beta) = Hashtbl.find created_prop_info h in
+                [("creatorasprop",JsonObj([("creatoraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let ownerprop =
+              try
+                let (aid,bday,beta,gamma,r) = Hashtbl.find owns_prop_info h in
+                [("ownerasprop",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let al = thystr @ txstr @ creatorobj @ ownerobj @ creatorprop @ ownerprop in
+            let al = ("trmpres",JsonStr(Mathdata.mg_nice_trm thyh m))::al in
+            let al = ("type",JsonStr("termroot"))::al in
+            dbentries := JsonObj(al)::!dbentries)
+          (Hashtbl.find_all (if !term_info_refreshing then term_info_bkp else term_info) h);
+        List.iter
+          (fun (thyh,a,tmroot,prim) ->
+            let creatorobj =
+              try
+                let (aid,bday,beta) = Hashtbl.find created_obj_info h in
+                [("creatorasobj",JsonObj([("creatoraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let ownerobj =
+              try
+                let (aid,bday,beta,gamma,r) = Hashtbl.find owns_obj_info h in
+                [("ownerasobj",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let thyinfo =
+              match thyh with
+              | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+              | None -> []
+            in
+            let al = thyinfo @ creatorobj @ ownerobj in
+            let al = ("stppres",JsonStr(Mathdata.mg_nice_stp (Some(Mathdata.hfthyroot)) a))::al in
+            let al = ("termroot",JsonStr(hashval_hexstring tmroot))::al in
+            let al = ("type",JsonStr("obj"))::al in
+            let ar = ref al in
+            List.iter
+              (fun (m,aid,thyh2,pfgbh,otx) ->
+                if thyh = thyh2 then
+                  begin
+                    let txstr =
+                      match otx with
+                      | Some(txid) -> [("tx",JsonStr(hashval_hexstring txid))]
+                      | None -> [("block",JsonStr(hashval_hexstring pfgbh))]
+                    in
+                    ar := !ar @ txstr;
+                    ar := !ar @ [("trmpres",JsonStr(Mathdata.mg_nice_trm thyh m))]
+                  end)
+              (Hashtbl.find_all (if !term_info_refreshing then term_info_bkp else term_info) tmroot);
+            dbentries := JsonObj(!ar)::!dbentries)
+          (Hashtbl.find_all (if !term_info_refreshing then obj_info_bkp else obj_info) h);
+        List.iter
+          (fun (thyh,tmroot,prim) ->
+            let creatorprop =
+              try
+                let (aid,bday,beta) = Hashtbl.find created_prop_info h in
+                [("creatorasprop",JsonObj([("creatoraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let ownerprop =
+              try
+                let (aid,bday,beta,gamma,r) = Hashtbl.find owns_prop_info h in
+                [("ownerasprop",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let thyinfo =
+              match thyh with
+              | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+              | None -> []
+            in
+            let al = thyinfo @ creatorprop @ ownerprop in
+            let al = ("termroot",JsonStr(hashval_hexstring tmroot))::al in
+            let al = ("type",JsonStr("prop"))::al in
+            let ar = ref al in
+            List.iter
+              (fun (m,aid,thyh2,pfgbh,otx) ->
+                if thyh = thyh2 then
+                  begin
+                    let txstr =
+                      match otx with
+                      | Some(txid) -> [("tx",JsonStr(hashval_hexstring txid))]
+                      | None -> [("block",JsonStr(hashval_hexstring pfgbh))]
+                    in
+                    ar := !ar @ txstr;
+                    ar := !ar @ [("trmpres",JsonStr(Mathdata.mg_nice_trm thyh m))]
+                  end)
+              (Hashtbl.find_all (if !term_info_refreshing then term_info_bkp else term_info) tmroot);
+            dbentries := JsonObj(!ar)::!dbentries)
+          (Hashtbl.find_all (if !term_info_refreshing then prop_info_bkp else prop_info) h);
 	if !dbentries = [] then
 	  JsonObj([("response",JsonStr("unknown"));("msg",JsonStr("No associated information found"))])
 	else

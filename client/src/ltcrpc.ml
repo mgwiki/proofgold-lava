@@ -129,6 +129,15 @@ let allswapbuyoffers_by_forw_time : (int64 * hashval * float * swapbuyoffertype)
 let allswapbuyoffers_by_price : (int64 * hashval * float * swapbuyoffertype) list ref = ref []
 let allswapbuyoffers_have : (hashval,unit) Hashtbl.t = Hashtbl.create 500
 
+let allswapexec : (hashval,int64 * hashval * hashval) Hashtbl.t = Hashtbl.create 500
+let allswapexec_have : (hashval,unit) Hashtbl.t = Hashtbl.create 500
+
+let allalerts : (int64 * hashval * string) list ref = ref []
+let allalerts_have : (hashval,unit) Hashtbl.t = Hashtbl.create 500
+
+let alllisteners : (string,int64) Hashtbl.t = Hashtbl.create 500
+let alllisteners_have : (hashval,unit) Hashtbl.t = Hashtbl.create 500
+
 let ltc_insert_swap_buyoffer tm ltctxid pr sbo =
   if not (Hashtbl.mem allswapbuyoffers_have ltctxid) then
     begin
@@ -1301,6 +1310,69 @@ let ltc_tx_confirmed h =
     | _ -> None
   with _ -> None
 
+let ltc_tx_confirmed2 h =
+  try
+    let l =
+      if !Config.ltcoffline then
+        begin
+	  Printf.printf "call getrawtransaction %s in ltc\n>> " h; flush stdout;
+	  read_line()
+        end
+      else
+        let call = "{\"jsonrpc\": \"1.0\", \"id\":\"grtx\", \"method\": \"getrawtransaction\", \"params\": [\"" ^ h ^ "\",1] }" in
+        begin
+          try
+            if !Config.ltcrpcavoidcurl then
+              begin
+                let (s,sin,sout) = ltcrpc_connect () in
+                Printf.fprintf sout "Content-Length: %d\n\n" (String.length call);
+                Printf.fprintf sout "%s\n" call;
+                flush sout;
+                skip_to_blankline sin;
+                let l = input_line sin in
+                shutdown_close s;
+                l
+              end
+            else
+              raise Exit
+          with Exit -> (* fall back on curl *)
+            let userpass = !Config.ltcrpcuser ^ ":" ^ !Config.ltcrpcpass in
+            let url = ltcrpc_url() in
+            let fullcall = !Config.curl ^ " --user " ^ userpass ^ " --data-binary '" ^ call ^ "' -H 'content-type: text/plain;' " ^ url in
+            let (inc,outc,errc) = Unix.open_process_full fullcall [| |] in
+            let l = input_line inc in
+            ignore (Unix.close_process_full (inc,outc,errc));
+            l
+        end
+    in
+    match parse_jsonval l with
+    | (JsonObj(al),_) ->
+       begin
+	 match List.assoc "result" al with
+	 | JsonObj(bl) ->
+	    begin
+	      match List.assoc "confirmations" bl with
+	      | JsonNum(c) ->
+                 begin
+		   let tm = json_assoc_int64 "blocktime" bl in
+                   match List.assoc "vin" bl with
+	           | JsonArr(JsonObj(vin1)::_) ->
+                      let txid1 = json_assoc_string "txid" vin1 in
+                      let vout1 = json_assoc_int "vout" vin1 in
+                      if vout1 = 1 then
+                        Some(int_of_string c,Some(txid1,tm))
+                      else
+                        Some(int_of_string c,None)
+                   | _ ->
+                      Some(int_of_string c,None)
+                 end
+	      | _ -> None
+            end
+         | _ -> None
+       end
+    | _ -> None
+  with _ -> None
+
 let ltc_tx_poburn h =
   try
     let (u,h1,h2,lblkh,confs,txid1,vout1) = ltc_getburntransactioninfo h in
@@ -1955,12 +2027,48 @@ let ltc_process_alert_tx_real h init =
                                   if not init then Utils.log_string (Printf.sprintf "\nALERT: %s\n" msg);
                                   if not !Config.daemon then
                                     (Printf.printf "\nALERT: %s\n" msg; flush stdout);
+                                  let ltctxid = hexstring_hashval h in
+                                  if not (Hashtbl.mem allalerts_have ltctxid) then
+                                    begin
+		                      let tm = json_assoc_int64 "blocktime" bl in
+                                      Hashtbl.add allalerts_have ltctxid ();
+                                      allalerts := List.merge (fun (tm1,_,_) (tm2,_,_) -> compare tm2 tm1) [(tm,ltctxid,msg)] !allalerts;
+                                      let ddir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
+                                      let hfn = Filename.concat ddir "alerthistory.csv" in
+                                      let f = open_out_gen [Open_wronly;Open_creat;Open_append] 0o600 hfn in
+                                      Printf.fprintf f "%Ld, %s, %s\n" tm h (string_hexstring msg);
+                                      close_out f
+                                    end
                                 end
                               else if datastr.[0] = 'L' then (** listener node **)
                                 begin
                                   let n = String.sub datastr 1 (datastrl - 4) in
                                   if not init then Utils.log_string (Printf.sprintf "\nALERT: Listener node: %s\n" n);
-                                  record_peer n
+                                  record_peer n;
+                                  let ltctxid = hexstring_hashval h in
+                                  if not (Hashtbl.mem alllisteners_have ltctxid) then
+                                    begin
+		                      let tm = json_assoc_int64 "blocktime" bl in
+                                      Hashtbl.add alllisteners_have ltctxid ();
+                                      try
+                                        let otm = Hashtbl.find alllisteners n in
+                                        if tm > otm then
+                                          begin
+                                            Hashtbl.replace alllisteners n tm;
+                                            let ddir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
+                                            let hfn = Filename.concat ddir "listenerhistory.csv" in
+                                            let f = open_out_gen [Open_wronly;Open_creat;Open_append] 0o600 hfn in
+                                            Printf.fprintf f "%Ld, %s, %s\n" tm h (string_hexstring n);
+                                            close_out f
+                                          end
+                                      with Not_found ->
+                                        Hashtbl.replace alllisteners n tm;
+                                        let ddir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
+                                        let hfn = Filename.concat ddir "listenerhistory.csv" in
+                                        let f = open_out_gen [Open_wronly;Open_creat;Open_append] 0o600 hfn in
+                                        Printf.fprintf f "%Ld, %s, %s\n" tm h (string_hexstring n);
+                                        close_out f
+                                    end
                                 end
                               else if datastr.[0] = 'B' then (** bootstrap url **)
                                 begin
@@ -2063,8 +2171,7 @@ let parse_csv l =
   in
   parse_csv_s 0
 
-let initialize_historic_swap_info () =
-  let ddir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
+let initialize_historic_swap_info_buyoffers ddir =
   let hswapfn = Filename.concat ddir "swapbuyofferhistory.csv" in
   if Sys.file_exists hswapfn then
     let f = open_in hswapfn in
@@ -2617,3 +2724,108 @@ let initialize_historic_swap_info () =
       Printf.fprintf f "1712662593, 50531cdc5364ec881fd991d191269464788a0d9c06b0614905010ae850c2beb2, ltc1q8ylr8f324ytanyw9ejrkmgmmse6wgjs0q528w5, PrQbKwmwDVynAnHSQ6vWNd2ZpvdcN6yFa2x, 20200000000000, 809998000, 0.040099\n";
       close_out f;
     end
+
+let initialize_historic_swap_info_execs ddir =
+  let hswapfn = Filename.concat ddir "swapexechistory.csv" in
+  if Sys.file_exists hswapfn then
+    let f = open_in hswapfn in
+    begin
+      try
+        while true do
+          let l = input_line f in
+          let ll = parse_csv l in
+          match ll with
+          | [tm;pfgtxid;ltctxid;ltctxofferid] ->
+             begin
+               let tm = Int64.of_string tm in
+               let pfgtxidh = hexstring_hashval pfgtxid in
+               let ltctxidh = hexstring_hashval ltctxid in
+               let ltctxofferidh = hexstring_hashval ltctxofferid in
+               if not (Hashtbl.mem allswapexec_have ltctxidh) then
+                 begin
+                   Hashtbl.add allswapexec_have ltctxidh ();
+                   Hashtbl.add allswapexec ltctxofferidh (tm,pfgtxidh,ltctxidh);
+                 end
+             end
+          | _ ->
+             raise (Failure (Printf.sprintf "%d comma separated values, but expected 4" (List.length ll)))
+        done
+      with
+      | End_of_file ->
+         close_in f
+      | exn ->
+         Printf.printf "Unexpected exception when initializing historic swap info:\n%s\nCorrupted swapexechistory.csv?\n" (Printexc.to_string exn);
+         close_in f
+    end
+
+let initialize_historic_alerts ddir =
+  let hfn = Filename.concat ddir "alerthistory.csv" in
+  if Sys.file_exists hfn then
+    let f = open_in hfn in
+    begin
+      try
+        while true do
+          let l = input_line f in
+          let ll = parse_csv l in
+          match ll with
+          | [tm;ltctxid;hexmsg] ->
+             begin
+               let tm = Int64.of_string tm in
+               let ltctxidh = hexstring_hashval ltctxid in
+               let msg = hexstring_string hexmsg in
+               if not (Hashtbl.mem allalerts_have ltctxidh) then
+                 begin
+                   Hashtbl.add allalerts_have ltctxidh ();
+                   allalerts := List.merge (fun (tm1,_,_) (tm2,_,_) -> compare tm2 tm1) [(tm,ltctxidh,msg)] !allalerts;
+                 end
+             end
+          | _ ->
+             raise (Failure (Printf.sprintf "%d comma separated values, but expected 3" (List.length ll)))
+        done
+      with
+      | End_of_file ->
+         close_in f
+      | exn ->
+         Printf.printf "Unexpected exception when initializing historic alerts info:\n%s\nCorrupted alerthistory.csv?\n" (Printexc.to_string exn);
+         close_in f
+    end
+
+let initialize_historic_listeners ddir =
+  let hfn = Filename.concat ddir "listenerhistory.csv" in
+  if Sys.file_exists hfn then
+    let f = open_in hfn in
+    begin
+      try
+        while true do
+          let l = input_line f in
+          let ll = parse_csv l in
+          match ll with
+          | [tm;ltctxid;hexmsg] ->
+             begin
+               let tm = Int64.of_string tm in
+               let ltctxidh = hexstring_hashval ltctxid in
+               let msg = hexstring_string hexmsg in
+               try
+                 let otm = Hashtbl.find alllisteners msg in
+                 if tm > otm then
+                   Hashtbl.replace alllisteners msg tm
+               with Not_found ->
+                     Hashtbl.add alllisteners msg tm
+             end
+          | _ ->
+             raise (Failure (Printf.sprintf "%d comma separated values, but expected 3" (List.length ll)))
+        done
+      with
+      | End_of_file ->
+         close_in f
+      | exn ->
+         Printf.printf "Unexpected exception when initializing historic listeners info:\n%s\nCorrupted listenerhistory.csv?\n" (Printexc.to_string exn);
+         close_in f
+    end
+
+let initialize_historic_swap_info () =
+  let ddir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
+  initialize_historic_swap_info_buyoffers ddir;
+  initialize_historic_swap_info_execs ddir;
+  initialize_historic_alerts ddir;
+  initialize_historic_listeners ddir

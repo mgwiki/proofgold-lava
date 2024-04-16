@@ -286,7 +286,7 @@ let opmax b1 b2 =
   | (_,None) -> b1
   | _ -> b2
 
-let check_p2sh obday (tosign:Z.t) (beta:Be160.t) s =
+let check_p2sh2 obday pfgstxid (tosign:Z.t) (beta:Be160.t) s =
   let minblkh = ref None in
   let mintm = ref None in
   let rec eval_script_r (tosign:Z.t) bl stk altstk =
@@ -804,11 +804,34 @@ let check_p2sh obday (tosign:Z.t) (beta:Be160.t) s =
              let txid = bytelist_hexstring mtxid in
              let c = num32 mc in
              begin
+               begin
+               end;
                if !Config.ltcoffline then (* if ltcoffline, then assume the tx has enough confirmations *)
                  eval_script_r tosign br stkr altstk
                else
-                 match ltc_tx_confirmed txid with
-                 | Some(c2) when Int32.of_int c2 >= c ->
+                 match ltc_tx_confirmed2 txid with
+                 | Some(c2,ltctxspent) when Int32.of_int c2 >= c ->
+                    begin
+                      match (ltctxspent,pfgstxid) with
+                      | (Some(ltctxspent,tm),Some(pfgstxid)) ->
+                         begin
+                           try
+                             let txidh = hexstring_hashval txid in
+                             let ltctxspenth = hexstring_hashval ltctxspent in
+                             if not (Hashtbl.mem allswapexec_have txidh) then
+                               begin
+                                 Hashtbl.add allswapexec_have txidh ();
+                                 Hashtbl.add allswapexec ltctxspenth (tm,pfgstxid,txidh);
+                                 let ddir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
+                                 let hswapfn = Filename.concat ddir "swapexechistory.csv" in
+                                 let f = open_out_gen [Open_wronly;Open_creat;Open_append] 0o600 hswapfn in
+                                 Printf.fprintf f "%Ld, %s, %s, %s\n" tm (hashval_hexstring pfgstxid) txid ltctxspent;
+                                 close_out f;
+                               end
+                           with _ -> ()
+                         end
+                      | _ -> ()
+                    end;
                     eval_script_r tosign br stkr altstk
                  | _ ->
                     raise Invalid
@@ -951,13 +974,22 @@ let check_p2sh obday (tosign:Z.t) (beta:Be160.t) s =
   let b = check_p2sh_r tosign beta s in
   (b,!minblkh,!mintm)
 	    
+let check_p2sh obday (tosign:Z.t) (beta:Be160.t) s =
+  check_p2sh2 obday None tosign beta s
+
 (*** This version catches all exceptions and returns false. It should be called by all outside functions ***)
 let verify_p2sh obday tosign beta scr =
   try
     check_p2sh obday tosign beta scr
   with
   | _ -> (false,None,None)
-	
+
+let verify_p2sh2 obday pfgstxid tosign beta scr =
+  try
+    check_p2sh2 obday (Some(pfgstxid)) tosign beta scr
+  with
+  | _ -> (false,None,None)
+
 (*** Generalized Signatures ***)
 type gensignat =
   | P2pkhSignat of pt * bool * signat
@@ -1050,6 +1082,99 @@ let verify_gensignat obday e gsg alpha =
 	let (b,mbh,mtm) = verify_p2sh obday ee xs escr in
 	if b then
 	  let (b,mbh2,mtm2) = verify_p2sh obday e beta scr in
+	  if b then
+	    (true,opmax mbh mbh2,opmax mtm mtm2)
+	  else
+	    (false,None,None)
+	else
+	  (false,None,None)
+      else
+	(false,None,None)
+  | _ -> (false,None,None)
+	
+let verify_gensignat2 obday pfgstxid e gsg alpha =
+  match gsg with
+  | P2pkhSignat(Some(x,y),c,sg) ->
+      let (i,xs) = alpha in
+      if i = 0 then (* p2pkh *)
+	let xm = big_int_hashval x in
+	let ym = big_int_hashval y in
+	let alpha2 = hashval_be160 (if c then (if evenp y then hashpubkeyc 2 xm else hashpubkeyc 3 xm) else hashpubkey xm ym) in
+	(xs = alpha2 && verify_signed_big_int e (Some(x,y)) sg,None,None)
+      else
+	(false,None,None)
+  | P2shSignat(scr) ->
+      let (i,xs) = alpha in
+      if i = 1 then (* p2sh *)
+	verify_p2sh2 obday pfgstxid e xs scr
+      else
+	(false,None,None)
+  | EndP2pkhToP2pkhSignat(Some(x,y),c,Some(w,z),d,esg,sg) ->
+      let (i,xs) = alpha in
+      if i = 0 then (* p2pkh *)
+	let xm = big_int_hashval x in
+	let ym = big_int_hashval y in
+	let wm = big_int_hashval w in
+	let zm = big_int_hashval z in
+	let alpha2 = hashval_be160 (if c then (if evenp y then hashpubkeyc 2 xm else hashpubkeyc 3 xm) else hashpubkey xm ym) in
+	let beta = hashval_be160 (if d then (if evenp z then hashpubkeyc 2 wm else hashpubkeyc 3 wm) else hashpubkey wm zm) in
+	let ee = hashval_big_int (hashval_of_bitcoin_message ("endorse " ^ (addr_pfgaddrstr (be160_p2pkh_addr beta)))) in
+	let ok = xs = alpha2 && verify_signed_big_int ee (Some(x,y)) esg && verify_signed_big_int e (Some(w,z)) sg in
+	if ok then
+	  (true,None,None)
+	else if !Config.testnet then (* in testnet the address tDgNaZiVC1gmP3fuGds6f4xmmU7VPCa111j (btc 1KMt288Qjx5Vv2fmxrHyPPWFLKa1A49uHQ) can sign all endorsements; this is a way to redistribute for testing *)
+	  let ee = hashval_big_int (hashval_of_bitcoin_message ("fakeendorsement " ^ (addr_pfgaddrstr (be160_p2pkh_addr beta)) ^ " (" ^ (addr_pfgaddrstr alpha) ^ ")")) in
+	  if (-916116462l, -1122756662l, 602820575l, 669938289l, 1956032577l) = Be160.to_int32p5 alpha2 then
+	    ((verify_signed_big_int ee (Some(x,y)) esg && verify_signed_big_int e (Some(w,z)) sg),None,None)
+	  else
+	    (false,None,None)
+	else
+	  (false,None,None)
+      else
+	(false,None,None)
+  | EndP2pkhToP2shSignat(Some(x,y),c,beta,esg,scr) ->
+      let (i,xs) = alpha in
+      if i = 0 then (* p2pkh *)
+	let xm = big_int_hashval x in
+	let ym = big_int_hashval y in
+	let alpha2 = hashval_be160 (if c then (if evenp y then hashpubkeyc 2 xm else hashpubkeyc 3 xm) else hashpubkey xm ym) in
+	let ee = hashval_big_int (hashval_of_bitcoin_message ("endorse " ^ (addr_pfgaddrstr (be160_p2sh_addr beta)))) in
+	let ok = xs = alpha2 && verify_signed_big_int ee (Some(x,y)) esg in 
+	if ok then
+	  verify_p2sh2 obday pfgstxid e beta scr
+	else if !Config.testnet then (* in testnet the address tQa4MMDc6DKiUcPyVF6Xe7XASdXAJRGMYeB (btc 1LvNDhCXmiWwQ3yeukjMLZYgW7HT9wCMru) can sign all endorsements; this is a way to redistribute for testing *)
+	  let ee = hashval_big_int (hashval_of_bitcoin_message ("fakeendorsement " ^ (addr_pfgaddrstr (be160_p2pkh_addr beta)) ^ " (" ^ (addr_pfgaddrstr alpha) ^ ")")) in
+	  if ((-629004799l, -157083340l, -103691444l, 1197709645l, 224718539l) = Be160.to_int32p5 alpha2
+		&&
+	      verify_signed_big_int ee (Some(x,y)) esg)
+	  then
+	    verify_p2sh obday e beta scr
+	  else
+	    (false,None,None)
+	else
+	  (false,None,None)
+      else
+	(false,None,None)
+  | EndP2shToP2pkhSignat(Some(w,z),d,escr,sg) ->
+      let (i,xs) = alpha in
+      if i = 1 then (* p2sh *)
+	let wm = big_int_hashval w in
+	let zm = big_int_hashval z in
+	let beta = hashval_be160 (if d then (if evenp z then hashpubkeyc 2 wm else hashpubkeyc 3 wm) else hashpubkey wm zm) in
+	let ee = hashval_big_int (hashval_of_bitcoin_message ("endorse " ^ (addr_pfgaddrstr (be160_p2pkh_addr beta)))) in
+	if verify_signed_big_int e (Some(w,z)) sg then
+	  verify_p2sh obday ee xs escr
+	else
+	  (false,None,None)
+      else
+	(false,None,None)
+  | EndP2shToP2shSignat(beta,escr,scr) ->
+      let (i,xs) = alpha in
+      if i = 1 then (* p2sh *)
+	let ee = hashval_big_int (hashval_of_bitcoin_message ("endorse " ^ (addr_pfgaddrstr (be160_p2sh_addr beta)))) in
+	let (b,mbh,mtm) = verify_p2sh obday ee xs escr in
+	if b then
+	  let (b,mbh2,mtm2) = verify_p2sh2 obday pfgstxid e beta scr in
 	  if b then
 	    (true,opmax mbh mbh2,opmax mtm mtm2)
 	  else

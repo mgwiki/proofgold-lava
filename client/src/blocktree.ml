@@ -40,9 +40,31 @@ let extend_explorer_info lkey pfgbh bhd bd blkhght =
            [])
   in
   let handle_out otx (alpha,(aid,bday,obl,u)) =
+    Hashtbl.add asset_id_hash_history lkey (aid,hashasset (aid,bday,obl,u),pfgbh,otx);
     match u with
     | Bounty(v) ->
        Hashtbl.add bounty_history_table lkey (alpha,aid,v,pfgbh,otx)
+    | OwnsObj(oid,gamma,r) ->
+       begin
+         match obl with
+         | Some(beta,_,_) ->
+            Hashtbl.add ownsobj_history_table lkey (oid,aid,bday,beta,gamma,r)
+         | None -> () (** impossible **)
+       end
+    | OwnsProp(pid,gamma,r) ->
+       begin
+         match obl with
+         | Some(beta,_,_) ->
+            Hashtbl.add ownsprop_history_table lkey (pid,aid,bday,beta,gamma,r)
+         | None -> () (** impossible **)
+       end
+    | OwnsNegProp ->
+       begin
+         match obl with
+         | Some(beta,_,_) ->
+            Hashtbl.add ownsnegprop_history_table lkey (alpha,aid,bday,beta)
+         | None -> () (** impossible **)
+       end
     | TheoryPublication(beta,_,thyspec) ->
        begin
          let thyh = hashtheory (theoryspec_theory thyspec) in

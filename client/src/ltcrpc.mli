@@ -91,6 +91,8 @@ val ltc_synced : unit -> bool
 
 val ltc_tx_confirmed : string -> int option
 
+val ltc_tx_confirmed2 : string -> (int * (string * int64) option) option
+
 val ltc_tx_poburn : string -> poburn
 
 val ltc_best_chaintips : unit -> hashval list list
@@ -110,6 +112,9 @@ val swapbuyoffers : (hashval * float * swapbuyoffertype) list ref
 val allswapbuyoffers_by_rev_time : (int64 * hashval * float * swapbuyoffertype) list ref
 val allswapbuyoffers_by_forw_time : (int64 * hashval * float * swapbuyoffertype) list ref
 val allswapbuyoffers_by_price : (int64 * hashval * float * swapbuyoffertype) list ref
+val allswapexec : (hashval,int64 * hashval * hashval) Hashtbl.t
+val allswapexec_have : (hashval,unit) Hashtbl.t
+
 val ltc_scanforswapbuyoffers : int -> unit
 val ltc_getswaptransactioninfo : string -> unit
 val ltc_cancelswapbuyoffer : string -> unit

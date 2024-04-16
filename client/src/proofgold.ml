@@ -811,6 +811,75 @@ let load_identities () =
         end
     end;;
 
+let load_mglegend fn =
+  let f = open_in fn in
+  begin
+    try
+      while true do
+        let l = input_line f in
+        let ll = String.length l in
+        let name_priority s =
+          let sl = String.length s in
+          let i = ref 0 in
+          while (!i < sl && not (s.[!i] = ' ')) do
+            incr i
+          done;
+          if !i+1 < sl then
+            (String.sub s 0 !i,int_of_string (String.sub s (!i+1) (sl - (!i+1))))
+          else
+            raise (Failure (Printf.sprintf "bad name with priority in legend file:%s" s))
+        in
+        if ll > 11 && String.sub l 0 11 = "PREFIXNAME " then
+          let (nm,pr) = name_priority (String.sub l 11 (ll - 11)) in
+          Hashtbl.add penv_preop nm pr
+        else if ll > 12 && String.sub l 0 12 = "POSTFIXNAME " then
+          let (nm,pr) = name_priority (String.sub l 12 (ll - 12)) in
+          Hashtbl.add penv_postinfop nm (pr,Postfix)
+        else if ll > 14 && String.sub l 0 14 = "INFIXNONENAME " then
+          let (nm,pr) = name_priority (String.sub l 14 (ll - 14)) in
+          Hashtbl.add penv_postinfop nm (pr,InfixNone)
+        else if ll > 14 && String.sub l 0 14 = "INFIXLEFTNAME " then
+          let (nm,pr) = name_priority (String.sub l 14 (ll - 14)) in
+          Hashtbl.add penv_postinfop nm (pr,InfixLeft)
+        else if ll > 15 && String.sub l 0 15 = "INFIXRIGHTNAME " then
+          let (nm,pr) = name_priority (String.sub l 15 (ll - 15)) in
+          Hashtbl.add penv_postinfop nm (pr,InfixRight)
+        else if ll > 11 && String.sub l 0 11 = "BINDERNAME " then
+          let nm = String.sub l 11 (ll - 11) in
+          Hashtbl.add penv_binder nm ()
+        else if String.length l > 66 then
+          begin
+            if l.[0] = 'O' && l.[1] = ' ' then
+              let h = hexstring_hashval (String.sub l 2 64) in
+              let nm = String.sub l 67 (ll - 67) in
+              Hashtbl.add mglegend h nm
+            else if l.[0] = 'P' && l.[1] = ' ' then
+              let h = hexstring_hashval (String.sub l 2 64) in
+              let nm = String.sub l 67 (ll - 67) in
+              Hashtbl.add mglegendp h nm
+            else if String.sub l 0 4 = "ITE " && ll = 68 then
+              let h = hexstring_hashval (String.sub l 4 64) in
+              Hashtbl.add mgifthenelse h ()
+            else if String.sub l 0 4 = "PRE " && ll > 69 then
+              let h = hexstring_hashval (String.sub l 4 64) in
+              let nm = String.sub l 69 (ll - 69) in
+              Hashtbl.add mgprefixop h nm
+            else if String.sub l 0 5 = "POST " && ll > 70 then
+              let h = hexstring_hashval (String.sub l 5 64) in
+              let nm = String.sub l 70 (ll - 70) in
+              Hashtbl.add mgpostfixop h nm
+            else if String.sub l 0 4 = "INF " && ll > 69 then
+              let h = hexstring_hashval (String.sub l 4 64) in
+              let nm = String.sub l 69 (ll - 69) in
+              Hashtbl.add mginfixop h nm
+            else if String.sub l 0 9 = "IMPLICIT " && ll = 73 then
+              let h = hexstring_hashval (String.sub l 9 64) in
+              Hashtbl.add mgimplop h ()
+          end
+      done
+    with End_of_file -> close_in f
+  end;;
+
 let find_spendable_utxo oc lr blkh mv =
   let b = ref None in
   List.iter
@@ -855,74 +924,7 @@ let initialize_commands () =
   ac "mglegend" "mglegend <legendfile>" "load a legend to associated presentation information with hashes"
     (fun oc al ->
       match al with
-      | [fn] ->
-         let f = open_in fn in
-         begin
-           try
-             while true do
-               let l = input_line f in
-               let ll = String.length l in
-               let name_priority s =
-                 let sl = String.length s in
-                 let i = ref 0 in
-                 while (!i < sl && not (s.[!i] = ' ')) do
-                   incr i
-                 done;
-                 if !i < sl then
-                   (String.sub s 0 !i,int_of_string (String.sub s (!i+1) (sl - !i+1)))
-                 else
-                   raise (Failure (Printf.sprintf "bad name with priority in legend file:%s" s))
-               in
-               if ll > 11 && String.sub l 0 11 = "PREFIXNAME " then
-                 let (nm,pr) = name_priority (String.sub l 11 (ll - 11)) in
-                 Hashtbl.add penv_preop nm pr
-               else if ll > 12 && String.sub l 0 12 = "POSTFIXNAME " then
-                 let (nm,pr) = name_priority (String.sub l 12 (ll - 12)) in
-                 Hashtbl.add penv_postinfop nm (pr,Postfix)
-               else if ll > 14 && String.sub l 0 14 = "INFIXNONENAME " then
-                 let (nm,pr) = name_priority (String.sub l 14 (ll - 14)) in
-                 Hashtbl.add penv_postinfop nm (pr,InfixNone)
-               else if ll > 14 && String.sub l 0 14 = "INFIXLEFTNAME " then
-                 let (nm,pr) = name_priority (String.sub l 14 (ll - 14)) in
-                 Hashtbl.add penv_postinfop nm (pr,InfixLeft)
-               else if ll > 15 && String.sub l 0 15 = "INFIXRIGHTNAME " then
-                 let (nm,pr) = name_priority (String.sub l 15 (ll - 15)) in
-                 Hashtbl.add penv_postinfop nm (pr,InfixRight)
-               else if ll > 11 && String.sub l 0 11 = "BINDERNAME " then
-                 let nm = String.sub l 11 (ll - 11) in
-                 Hashtbl.add penv_binder nm ()
-               else if String.length l > 66 then
-                 begin
-                   if l.[0] = 'O' && l.[1] = ' ' then
-                     let h = hexstring_hashval (String.sub l 2 64) in
-                     let nm = String.sub l 67 (ll - 67) in
-                     Hashtbl.add mglegend h nm
-                   else if l.[0] = 'P' && l.[1] = ' ' then
-                     let h = hexstring_hashval (String.sub l 2 64) in
-                     let nm = String.sub l 67 (ll - 67) in
-                     Hashtbl.add mglegendp h nm
-                   else if String.sub l 0 4 = "ITE " && ll = 68 then
-                     let h = hexstring_hashval (String.sub l 4 64) in
-                     Hashtbl.add mgifthenelse h ()
-                   else if String.sub l 0 4 = "PRE " && ll > 69 then
-                     let h = hexstring_hashval (String.sub l 4 64) in
-                     let nm = String.sub l 69 (ll - 69) in
-                     Hashtbl.add mgprefixop h nm
-                   else if String.sub l 0 5 = "POST " && ll > 70 then
-                     let h = hexstring_hashval (String.sub l 5 64) in
-                     let nm = String.sub l 70 (ll - 70) in
-                     Hashtbl.add mgpostfixop h nm
-                   else if String.sub l 0 4 = "INF " && ll > 69 then
-                     let h = hexstring_hashval (String.sub l 4 64) in
-                     let nm = String.sub l 69 (ll - 69) in
-                     Hashtbl.add mginfixop h nm
-                   else if String.sub l 0 9 = "IMPLICIT " && ll = 73 then
-                     let h = hexstring_hashval (String.sub l 9 64) in
-                     Hashtbl.add mgimplop h ()
-                 end
-             done
-           with End_of_file -> close_in f
-         end
+      | [fn] -> load_mglegend fn
       | _ -> raise BadCommandForm);
   ac "sendtoaddress" "sendtoaddress <address> <bars> [<lockheight>]" "Consolidate enough spendable utxos to send the given number of bars to the given address.\nIf the address is a term address, then the bars are put as a bounty.\nIf a lockheight is given and the address is a pay address,\n then the new asset is locked until the given height."
     (fun oc al ->
@@ -1076,6 +1078,33 @@ let initialize_commands () =
          in
          f !allswapbuyoffers_by_rev_time
       | _ -> raise BadCommandForm);
+  ac "recenthistoricswaps" "recenthistoricswaps <days to skip> <num days to include>" "recenthistoricswaps prints info about swaps from a number of days, after skipping some number of most recent days.\nEG: recenthistoricswaps 0 90 gives info for the past 90 days.\nrecenthistoricswaps 90 30 gives info for the 30 days before the past 90 days.\n"
+    (fun oc al ->
+      match al with
+      | [sd;nd] ->
+         let s = int_of_string sd in
+         let n = int_of_string nd in
+         let currtm = Int64.of_float (Unix.time()) in
+         let endtm = Int64.sub currtm (Int64.mul (Int64.of_int s) 86400L) in
+         let begtm = Int64.sub currtm (Int64.mul (Int64.of_int (s + n)) 86400L) in
+         let rec f l =
+           match l with
+           | [] -> ()
+           | (tm,ltcoffertxid,price,_)::r ->
+              if tm > begtm then f r;
+              if tm > begtm && tm <= endtm then
+                begin
+                  try
+                    let (exectm,pfgtxid,ltctxid) = Hashtbl.find allswapexec ltcoffertxid in
+                  
+                    let gtm = Unix.gmtime (Int64.to_float exectm) in
+                    Printf.fprintf oc "%04d-%02d-%02d %f\n"
+                      (1900+gtm.Unix.tm_year) (1+gtm.Unix.tm_mon) gtm.Unix.tm_mday price
+                  with Not_found -> ()
+                end
+         in
+         f !allswapbuyoffers_by_rev_time
+      | _ -> raise BadCommandForm);
   ac "highesthistoricbuyoffers" "highesthistoricbuyoffers <entries to skip> <entries to print>" "highesthistoricbuyoffers prints info about swap offers with the highest price, after skipping a given number.\n"
     (fun oc al ->
       match al with
@@ -1100,6 +1129,42 @@ let initialize_commands () =
              | [] -> ()
              | (tm,_,price,_)::r ->
                 f r (s-1)
+         in
+         f !allswapbuyoffers_by_price s
+      | _ -> raise BadCommandForm);
+  ac "highesthistoricswaps" "highesthistoricswaps <entries to skip> <entries to print>" "highesthistoricswaps prints info about swap offers with the highest price, after skipping a given number.\n"
+    (fun oc al ->
+      match al with
+      | [sd;nd] ->
+         let s = int_of_string sd in
+         let n = int_of_string nd in
+         let rec g l n =
+           if n > 0 then
+             match l with
+             | [] -> ()
+             | (offertm,ltcoffertxid,price,_)::r ->
+                begin
+                  try
+                    let (exectm,pfgtxid,ltctxid) = Hashtbl.find allswapexec ltcoffertxid in
+                    let gtm = Unix.gmtime (Int64.to_float exectm) in
+                    Printf.fprintf oc "%04d-%02d-%02d %f\n"
+                      (1900+gtm.Unix.tm_year) (1+gtm.Unix.tm_mon) gtm.Unix.tm_mday price;
+                    g r (n-1)
+                  with Not_found ->
+                    g r n
+                end
+         in
+         let rec f l s =
+           if s <= 0 then
+             g l n
+           else
+             match l with
+             | [] -> ()
+             | (tm,ltcoffertxid,price,_)::r ->
+                if Hashtbl.mem allswapexec ltcoffertxid then
+                  f r (s-1)
+                else
+                  f r s
          in
          f !allswapbuyoffers_by_price s
       | _ -> raise BadCommandForm);
@@ -3533,6 +3598,14 @@ let initialize_commands () =
       | [hh] ->
          let h = hexstring_hashval hh in
          let printedterm = ref false in
+         begin
+           try
+             let m = Hashtbl.find term_info_hf h in
+             match m with
+             | Prim(i) -> Printf.fprintf oc "Primitive %d (%s) in built-in HF theory.\n" i (hfprimnamesa.(i))
+             | _ -> Printf.fprintf oc "Term %s in built-in HF theory.\n" (mg_nice_trm (Some(Checking.hfthyid)) m)
+           with Not_found -> ()
+         end;
          List.iter
            (fun (m,aid,thyh,pfgbh,otx) ->
              if not !printedterm then
@@ -3562,20 +3635,28 @@ let initialize_commands () =
       | [hh] ->
          begin
            let h = hexstring_hashval hh in
-           let (thyh,a,tmroot,prim) = Hashtbl.find obj_info h in
-           let thystr =
-             match thyh with
-             | Some(h) -> Printf.sprintf "theory %s" (hashval_hexstring h)
-             | None -> "the empty theory"
-           in
-           if prim then
-             Printf.fprintf oc "Primitive object in theory %s with type:\n" thystr
-           else
-             Printf.fprintf oc "Defined object in theory %s with type:\n" thystr;
-           let j = json_stp a in
-           print_jsonval oc j;
-           Printf.fprintf oc "\n";
-           Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
+           try
+             let (thyh,a,tmroot,prim) = Hashtbl.find obj_info h in
+             let thystr =
+               match thyh with
+               | Some(h) -> Printf.sprintf "theory %s" (hashval_hexstring h)
+               | None -> "the empty theory"
+             in
+             if prim then
+               Printf.fprintf oc "Primitive object in %s with type:\n" thystr
+             else
+               Printf.fprintf oc "Defined object in %s with type:\n" thystr;
+             let j = json_stp a in
+             print_jsonval oc j;
+             Printf.fprintf oc "\n";
+             Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
+           with Not_found ->
+             try
+               let (a,tmroot) = Hashtbl.find obj_info_hf h in
+               Printf.fprintf oc "(Primitive) Object in built-in HF theory.\n";
+               Printf.fprintf oc "Type %s\n" (mg_nice_stp (Some(Checking.hfthyid)) a);
+               Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
+             with Not_found -> Printf.fprintf oc "No obj with this id found.\n"
          end
       | _ -> raise BadCommandForm);
   ac "querypropid" "querypropid <hashval>" "Return info given a prop id"
@@ -3592,11 +3673,16 @@ let initialize_commands () =
                | None -> "the empty theory"
              in
              if prim then
-               Printf.fprintf oc "Axiom in theory %s\n" thystr
+               Printf.fprintf oc "Axiom in %s\n" thystr
              else
-               Printf.fprintf oc "Theorem in theory %s\n" thystr;
+               Printf.fprintf oc "Theorem in %s\n" thystr;
              Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
-           with Not_found -> Printf.printf "Not a known propid\n"
+           with Not_found ->
+             try
+               let tmroot = Hashtbl.find prop_info_hf h in
+               Printf.fprintf oc "(Axiom) Prop in built-in HF theory.\n";
+               Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
+             with Not_found -> Printf.fprintf oc "Not a known propid\n"
          end
       | _ -> raise BadCommandForm);
   ac "querybounties" "querybounties <n> <m>" "Return info about m bounties after the top n (of all time)"
@@ -3608,15 +3694,15 @@ let initialize_commands () =
          let bs = if !bounty_sorted_refreshing then !bounty_sorted_bkp else !bounty_sorted in
          let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
          let lbs = List.length bs in
-         Printf.printf "Note: There have been a total of %d bounties in all of history.\n" lbs;
+         Printf.fprintf oc "Note: There have been a total of %d bounties in all of history.\n" lbs;
          let rec g l m =
            if m > 0 then
              match l with
              | (alpha,aid,v,blk,otx)::r ->
                 if Hashtbl.mem my_spent_table aid then
-                  Printf.printf "Bounty %s at %s (spent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha)
+                  Printf.fprintf oc "Bounty %s at %s (spent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha)
                 else
-                  Printf.printf "Bounty %s at %s (unspent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
+                  Printf.fprintf oc "Bounty %s at %s (unspent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
                 g r (m-1)
              | _ -> ()
            else
@@ -3648,7 +3734,7 @@ let initialize_commands () =
                   g r m
                 else
                   begin
-                    Printf.printf "Open Bounty %s at %s\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
+                    Printf.fprintf oc "Open Bounty %s at %s\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
                     g r (m-1)
                   end
              | _ -> ()
@@ -3683,7 +3769,7 @@ let initialize_commands () =
              | (alpha,aid,v,blk,otx)::r ->
                 if Hashtbl.mem my_spent_table aid then
                   begin
-                    Printf.printf "Bounty %s at %s (spent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
+                    Printf.fprintf oc "Bounty %s at %s (spent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
                     g r (m-1)
                   end
                 else
@@ -3717,11 +3803,11 @@ let initialize_commands () =
              let (lkey,pfgbh,otxid) = Hashtbl.find my_spent_table hh in
              match otxid with
              | Some(txid) ->
-                Printf.printf "%s was spent by tx %s in block %s\n" h (hashval_hexstring txid) (hashval_hexstring pfgbh)
+                Printf.fprintf oc "%s was spent by tx %s in block %s\n" h (hashval_hexstring txid) (hashval_hexstring pfgbh)
              | None ->
-                Printf.printf "%s was used to stake block %s\n" h (hashval_hexstring pfgbh)
+                Printf.fprintf oc "%s was used to stake block %s\n" h (hashval_hexstring pfgbh)
            with Not_found ->
-             Printf.printf "%s is unspent, assuming it is an asset at all\n" h
+             Printf.fprintf oc "%s is unspent, assuming it is an asset at all\n" h
          end
       | _ -> raise BadCommandForm);
   ac "querymg" "querymg <hashval or address or int[block height]> [<blockid or ledgerroot>]" "Get information (in json format) about some item.\nSpecial Notation is used to present types and terms (and proofs are omitted).\nThis is intended to support exporers.\nThe querymg command gives more detailed information if -extraindex is set to true.\n"
@@ -5814,6 +5900,9 @@ let rec refresh_explorer_tables_rec lkey =
     let bountyhere = List.sort (fun (_,_,v1,_,_) (_,_,v2,_,_) -> compare v2 v1) (Hashtbl.find_all bounty_history_table lkey) in
     bounty_sorted := List.merge (fun (_,_,v1,_,_) (_,_,v2,_,_) -> compare v2 v1) bountyhere !bounty_sorted;
     List.iter
+      (fun (aid,ah,pfgbh,otx) -> Hashtbl.add asset_id_hash_table aid (ah,pfgbh,otx))
+      (Hashtbl.find_all asset_id_hash_history lkey);
+    List.iter
       (fun (h,m,aid,thyh,pfgbh,otx) -> Hashtbl.add term_info h (m,aid,thyh,pfgbh,otx))
       (Hashtbl.find_all term_history_table lkey);
     List.iter
@@ -5822,6 +5911,24 @@ let rec refresh_explorer_tables_rec lkey =
     List.iter
       (fun (propid,thyh,h,prim) -> Hashtbl.add prop_info propid (thyh,h,prim))
       (Hashtbl.find_all prop_history_table lkey);
+    List.iter
+      (fun (objid,aid,bday,beta,gamma,r) ->
+        Hashtbl.replace created_obj_info objid (aid,bday,beta);
+        if not (Hashtbl.mem owns_obj_info objid) then
+          Hashtbl.add owns_obj_info objid (aid,bday,beta,gamma,r))
+      (Hashtbl.find_all ownsobj_history_table lkey);
+    List.iter
+      (fun (propid,aid,bday,beta,gamma,r) ->
+        Hashtbl.replace created_prop_info propid (aid,bday,beta);
+        if not (Hashtbl.mem owns_prop_info propid) then
+          Hashtbl.add owns_prop_info propid (aid,bday,beta,gamma,r))
+      (Hashtbl.find_all ownsprop_history_table lkey);
+    List.iter
+      (fun (alpha,aid,bday,beta) ->
+        Hashtbl.replace created_negprop_info alpha (aid,bday,beta);
+        if not (Hashtbl.mem owns_negprop_info alpha) then
+          Hashtbl.add owns_negprop_info alpha (aid,bday,beta))
+      (Hashtbl.find_all ownsnegprop_history_table lkey);
     match par with
     | Some(plkey) -> refresh_explorer_tables_rec plkey
     | None -> ()
@@ -5834,34 +5941,79 @@ let refresh_explorer_tables () =
     | None -> ()
     | Some(dbh,lbk,ltx) ->
        let tmstart = Unix.time () in
-       Printf.printf "Refreshing Explorer Tables\n";
+       (*       Printf.printf "Refreshing Explorer Tables\n"; *)
        let lkey = hashpair lbk ltx in
-       spent_table_refreshing := true;
-       bounty_sorted_refreshing := true;
-       term_info_refreshing := true;
+       Hashtbl.clear asset_id_hash_table_bkp;
+       Hashtbl.iter (fun k v -> Hashtbl.add asset_id_hash_table_bkp k v) asset_id_hash_table;
+       asset_id_hash_refreshing := true;
+       Hashtbl.clear asset_id_hash_table;
        Hashtbl.clear spent_table_bkp;
        Hashtbl.iter (fun k v -> Hashtbl.add spent_table_bkp k v) spent_table;
+       spent_table_refreshing := true;
        bounty_sorted_bkp := !bounty_sorted;
+       bounty_sorted_refreshing := true;
        Hashtbl.clear term_info_bkp;
        Hashtbl.clear obj_info_bkp;
        Hashtbl.clear prop_info_bkp;
+       Hashtbl.clear created_obj_info_bkp;
+       Hashtbl.clear created_prop_info_bkp;
+       Hashtbl.clear created_negprop_info_bkp;
+       Hashtbl.clear owns_obj_info_bkp;
+       Hashtbl.clear owns_prop_info_bkp;
+       Hashtbl.clear owns_negprop_info_bkp;
        Hashtbl.iter (fun k v -> Hashtbl.add term_info_bkp k v) term_info;
        Hashtbl.iter (fun k v -> Hashtbl.add obj_info_bkp k v) obj_info;
        Hashtbl.iter (fun k v -> Hashtbl.add prop_info_bkp k v) prop_info;
+       Hashtbl.iter (fun k v -> Hashtbl.add created_obj_info_bkp k v) created_obj_info;
+       Hashtbl.iter (fun k v -> Hashtbl.add created_prop_info_bkp k v) created_prop_info;
+       Hashtbl.iter (fun k v -> Hashtbl.add created_negprop_info_bkp k v) created_negprop_info;
+       Hashtbl.iter (fun k v -> Hashtbl.add owns_obj_info_bkp k v) owns_obj_info;
+       Hashtbl.iter (fun k v -> Hashtbl.add owns_prop_info_bkp k v) owns_prop_info;
+       Hashtbl.iter (fun k v -> Hashtbl.add owns_negprop_info_bkp k v) owns_negprop_info;
+       term_info_refreshing := true;
        Hashtbl.clear term_info;
        Hashtbl.clear obj_info;
        Hashtbl.clear prop_info;
        Hashtbl.clear spent_table;
+       Hashtbl.clear created_obj_info;
+       Hashtbl.clear created_prop_info;
+       Hashtbl.clear created_negprop_info;
+       Hashtbl.clear owns_obj_info;
+       Hashtbl.clear owns_prop_info;
+       Hashtbl.clear owns_negprop_info;
        bounty_sorted := [];
        refresh_explorer_tables_rec lkey;
+       asset_id_hash_refreshing := false;
        spent_table_refreshing := false;
        bounty_sorted_refreshing := false;
        term_info_refreshing := false;
-       Printf.printf "Finished refreshing Explorer Tables %f seconds\n" (Unix.time () -. tmstart);
+       (*       Printf.printf "Finished refreshing Explorer Tables %f seconds\n" (Unix.time () -. tmstart); *)
+       (* generate a new owned file for Megalodon *)
+       let ddir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
+       let nwownedfn = Filename.concat ddir "owned.new" in
+       let f = open_out nwownedfn in
+       Hashtbl.iter
+         (fun oid (aid,bday,beta,gamma,r) ->
+	   Printf.fprintf f "Obj %s %Ld %s %s %s %s %s\n" (hashval_hexstring aid) bday (hashval_hexstring oid) (addr_pfgaddrstr (hashval_term_addr oid)) (addr_pfgaddrstr (payaddr_addr beta)) (addr_pfgaddrstr (payaddr_addr gamma)) (match r with Some(rp) -> Printf.sprintf "%Ld" rp | None -> "None"))
+         owns_obj_info;
+       Hashtbl.iter
+         (fun pid (aid,bday,beta,gamma,r) ->
+	   Printf.fprintf f "Prop %s %Ld %s %s %s %s %s\n" (hashval_hexstring aid) bday (hashval_hexstring pid) (addr_pfgaddrstr (hashval_term_addr pid)) (addr_pfgaddrstr (payaddr_addr beta)) (addr_pfgaddrstr (payaddr_addr gamma)) (match r with Some(rp) -> Printf.sprintf "%Ld" rp | None -> "None"))
+         owns_prop_info;
+       Hashtbl.iter
+         (fun alpha (aid,bday,beta) ->
+	   Printf.fprintf f "NegProp %s %Ld %s\n" (hashval_hexstring aid) bday (addr_pfgaddrstr alpha))
+         owns_negprop_info;
+       close_out f;
+       let ownedfn = Filename.concat ddir "owned" in
+       if Sys.file_exists ownedfn then Sys.remove ownedfn;
+       Sys.rename nwownedfn ownedfn
   with
   | Not_found -> ()
   | Failure(ex) ->
      Printf.printf "Failure (%s) while refreshing explorer tables. Using bkp.\n" ex;
+     Hashtbl.clear asset_id_hash_table;
+     Hashtbl.iter (fun k v -> Hashtbl.add asset_id_hash_table k v) asset_id_hash_table_bkp;
      Hashtbl.clear spent_table;
      Hashtbl.iter (fun k v -> Hashtbl.add spent_table k v) spent_table_bkp;
      Hashtbl.clear term_info;
@@ -5870,7 +6022,23 @@ let refresh_explorer_tables () =
      Hashtbl.iter (fun k v -> Hashtbl.add obj_info k v) obj_info_bkp;
      Hashtbl.clear prop_info;
      Hashtbl.iter (fun k v -> Hashtbl.add prop_info k v) prop_info_bkp;
+     Hashtbl.clear created_obj_info;
+     Hashtbl.clear created_prop_info;
+     Hashtbl.clear created_negprop_info;
+     Hashtbl.clear owns_obj_info;
+     Hashtbl.clear owns_prop_info;
+     Hashtbl.clear owns_negprop_info;
+     Hashtbl.iter (fun k v -> Hashtbl.add term_info k v) term_info_bkp;
+     Hashtbl.iter (fun k v -> Hashtbl.add obj_info k v) obj_info_bkp;
+     Hashtbl.iter (fun k v -> Hashtbl.add prop_info k v) prop_info_bkp;
+     Hashtbl.iter (fun k v -> Hashtbl.add created_obj_info k v) created_obj_info_bkp;
+     Hashtbl.iter (fun k v -> Hashtbl.add created_prop_info k v) created_prop_info_bkp;
+     Hashtbl.iter (fun k v -> Hashtbl.add created_negprop_info k v) created_negprop_info_bkp;
+     Hashtbl.iter (fun k v -> Hashtbl.add owns_obj_info k v) owns_obj_info_bkp;
+     Hashtbl.iter (fun k v -> Hashtbl.add owns_prop_info k v) owns_prop_info_bkp;
+     Hashtbl.iter (fun k v -> Hashtbl.add owns_negprop_info k v) owns_negprop_info_bkp;
      bounty_sorted := !bounty_sorted_bkp;
+     asset_id_hash_refreshing := false;
      spent_table_refreshing := false;
      bounty_sorted_refreshing := false;
      term_info_refreshing := false
@@ -5892,9 +6060,31 @@ let rec init_explorer_tables_rec lkey =
            [])
   in
   let handle_out otx (alpha,(aid,bday,obl,u)) =
+    Hashtbl.add asset_id_hash_history lkey (aid,hashasset (aid,bday,obl,u),pfgbh,otx);
     match u with
     | Bounty(v) ->
        Hashtbl.add bounty_history_table lkey (alpha,aid,v,pfgbh,otx)
+    | OwnsObj(oid,gamma,r) ->
+       begin
+         match obl with
+         | Some(beta,_,_) ->
+            Hashtbl.add ownsobj_history_table lkey (oid,aid,bday,beta,gamma,r)
+         | None -> () (** impossible **)
+       end
+    | OwnsProp(pid,gamma,r) ->
+       begin
+         match obl with
+         | Some(beta,_,_) ->
+            Hashtbl.add ownsprop_history_table lkey (pid,aid,bday,beta,gamma,r)
+         | None -> () (** impossible **)
+       end
+    | OwnsNegProp ->
+       begin
+         match obl with
+         | Some(beta,_,_) ->
+            Hashtbl.add ownsnegprop_history_table lkey (alpha,aid,bday,beta)
+         | None -> () (** impossible **)
+       end
     | TheoryPublication(beta,_,thyspec) ->
        begin
          let thyh = hashtheory (theoryspec_theory thyspec) in
@@ -5929,7 +6119,7 @@ let rec init_explorer_tables_rec lkey =
                 end;
                 let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
                 Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false))
-           thyspec
+           (List.rev thyspec)
        end
     | DocPublication(beta,_,thyh,dl) ->
        begin
@@ -5979,7 +6169,35 @@ let rec init_explorer_tables_rec lkey =
      Hashtbl.add spent_history_table lkey (!spenthereinfo,Some(hashpair plbk pltx));
      init_explorer_tables_rec (hashpair plbk pltx);
   | None ->
-     Hashtbl.add spent_history_table lkey (!spenthereinfo,None);;
+     Hashtbl.add spent_history_table lkey (!spenthereinfo,None);
+     (** Built In HF Theory; not in a block **)
+     begin
+       let thyspec = Checking.hfthyspec in
+       let thyh = Checking.hfthyid in
+       let cnt = ref 0 in
+       List.iter
+         (fun i ->
+           match i with
+           | Logic.Thyprim(a) ->
+              let m = Logic.Prim(!cnt) in
+              let h = tm_hashroot m in
+              Hashtbl.add term_info_hf h m;
+              let objid = hashtag (hashpair thyh (hashpair h (hashtp a))) 32l in
+              incr cnt;
+              Hashtbl.add obj_info_hf objid (a,h);
+           | Thyaxiom(p) ->
+              let h = tm_hashroot p in
+              begin
+                match p with
+                | TmH(_) -> ()
+                | _ ->
+                   Hashtbl.add term_info_hf h p;
+              end;
+              let propid = hashtag (hashpair thyh h) 33l in
+              Hashtbl.add prop_info_hf propid h;
+           | Thydef(a,m) -> raise (Failure "does not happen in HF"))
+         (List.rev thyspec)
+     end;;
 
 let init_explorer_tables () =
   let tmstart = Unix.time () in
@@ -5994,7 +6212,8 @@ let init_explorer_tables () =
        init_explorer_tables_rec (hashpair lbk ltx);
        Printf.printf "Finished creating Explorer Tables: %f seconds\n" (Unix.time () -. tmstart);
   with Not_found ->
-    Printf.printf "Failed to create Explorer Tables: %f seconds\n" (Unix.time () -. tmstart);;
+    Printf.printf "Failed to create Explorer Tables: %f seconds\n" (Unix.time () -. tmstart);
+    ();;
 
 let set_signal_handlers () =
 (*  let generic_signal_handler str sg =
@@ -6314,6 +6533,12 @@ let initialize () =
     Commands.load_wallet();
     Printf.fprintf sout "Initializing historic swap info\n"; flush sout;
     initialize_historic_swap_info ();
+    Printf.fprintf sout "Initializing mglegend\n"; flush sout;
+    begin
+      let mglegendfn = Filename.concat datadir "mglegenddefault" in
+      if Sys.file_exists mglegendfn then
+        load_mglegend mglegendfn
+    end;
     let efn = !exitfn in
     exitfn := (fun n -> (try Commands.save_wallet() with _ -> ()); efn n);
     if !Config.swapping then
@@ -6448,6 +6673,7 @@ let main () =
       | 0 ->
 	  initialize();
           init_explorer_tables ();
+          refresh_explorer_tables ();
 	  if not !Config.offline then
 	    begin
 	      initnetwork !Utils.log;

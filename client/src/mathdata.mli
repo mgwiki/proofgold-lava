@@ -160,3 +160,9 @@ val signaspec_from_json : jsonval -> signaspec
 val doc_from_json : jsonval -> doc
 
 val mgdoc_out : out_channel -> hashval option -> doc -> unit
+val mg_nice_stp : hashval option -> stp -> string
+val mg_nice_trm : hashval option -> trm -> string
+val hfthyroot : hashval
+val hfprimnamesa : string array
+
+
