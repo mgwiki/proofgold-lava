@@ -1,0 +1,22 @@
+{"name": "Bounties",
+ "children": [
+     {"name": "Open", "size": 1307, "children" :
+      [
+       {"name":"Mizar", "size": 1439},
+       {"name":"AIM", "size": 1200},
+       {"name":"Surreal", "size": 1161},
+       {"name":"OEIS", "size": 1000},
+       {"name":"AbstrHF", "size": 622},
+       {"name":"Dioph mod", "size": 612},
+       {"name":"Dioph", "size": 519},
+       {"name":"Comb Unif", "size": 327},
+       {"name":"QBF", "size": 290},
+       {"name":"HO Set", "size": 269},
+       {"name":"Rand", "size": 244},
+       {"name":"HO Unif", "size": 135},
+       {"name":"Ramsey", "size": 67}
+
+      ]
+     },
+     {"name": "Claimed", "size": 2323}
+ ]}
