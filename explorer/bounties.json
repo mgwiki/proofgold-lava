@@ -1,0 +1,31 @@
+{"name": "Bounties", "children" : [
+    {"name": "Open", "size": 1082, "children" : [
+
+        {"name":"Mizar", "size": 1427},
+        {"name":"Random AIM", "size": 1184},
+        {"name":"Surreal", "size": 1109},
+        {"name":"OEIS", "size": 1000},
+        {"name":"AbstrHF", "size": 622},
+        {"name":"DiophantineMod", "size": 612},
+        {"name":"Diophantine", "size": 519},
+        {"name":"CombUnif", "size": 327},
+        {"name":"CatStruct", "size": 301},
+        {"name":"QBF", "size": 290},
+        {"name":"HOSetConstr", "size": 269},
+        {"name":"Random123", "size": 244},
+        {"name":"HOUnif", "size": 135},
+        {"name":"Ramsey", "size": 65},
+        {"name":"Preamble", "size": 1},
+        {"name":"CatSet", "size": 1}
+
+    ]},{"name": "Collected", "size": 1268, "children" : [
+
+        {"name":"Random123", "size": 800},
+        {"name":"CatStruct", "size": 118},
+        {"name":"Ramsey", "size": 101},
+        {"name":"CatSet", "size": 28},
+        {"name":"Mizar", "size": 9},
+        {"name":"Form100", "size": 2},
+        {"name":"Surreal", "size": 1}
+
+    ]}]}

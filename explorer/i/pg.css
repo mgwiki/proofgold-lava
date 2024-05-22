@@ -1,0 +1,131 @@
+/* pgbce.css */
+body {
+    font-family: 'Roboto', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(to right, #ffd700, #b36900);
+}
+
+center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+}
+
+h1, h2, h3 {
+    color: #000;
+    text-shadow: 2px 2px #fff;
+}
+
+h1 {
+    font-size: 3em;
+    text-align: center;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+h2 {
+    font-size: 2.5em;
+    text-align: center;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+h3 {
+    font-size: 2em;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+h4 {
+    font-size: 1.5em;
+    text-align: center;
+}
+
+form {
+    margin-bottom: 20px;
+    background-color: rgba(255, 255, 255, 0.7);
+    padding: 5px;
+    border-radius: 5px;
+}
+
+input[type="text"], input[type="submit"] {
+    padding: 5px;
+    font-size: 1em;
+    border-radius: 3px;
+    border: none;
+}
+
+input[type="text"] {
+    width: 300px;
+    margin-right: 10px;
+}
+
+input[type="submit"] {
+    background-color: #ff5e62;
+    color: #fff;
+    cursor: pointer;
+}
+
+table {
+  border: 2px solid #ddd;
+  border-radius: 10px;
+  background-color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 20px;
+  width: 90%;
+}
+
+td, th {
+  border-collapse: collapse;
+  padding: 8px;
+  text-align: center;
+  width: 20%;
+}
+
+td > table {
+  width: 100%;
+}
+
+td {
+  font-weight: bold;
+}
+
+th {
+  font-size: 75%;
+  padding-bottom: 0px;
+  font-weight: normal; /* Set the font weight to normal */
+}
+
+pre {
+    white-space: pre-wrap;       /* css-3 */
+    white-space: -moz-pre-wrap;  /* Mozilla, since 1999 */
+    white-space: -pre-wrap;      /* Opera 4-6 */
+    white-space: -o-pre-wrap;    /* Opera 7 */
+    word-wrap: break-word;       /* Internet Explorer 5.5+ */
+}
+
+canvas {
+    margin-bottom: 20px;
+}
+
+/* Variables */
+.name {
+    color: brown;
+}
+
+/* Infix operators */
+.infixop {
+    color: #666666;
+}
+
+/* Implicit operators */
+.implicitop {
+    color: #999999;
+}
+
+/* Quantifiers */
+.binder {
+    color: #008000;
+    font-weight: bold;
+}
