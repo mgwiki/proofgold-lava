@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2023 The Proofgold Lava developers *)
 (* Copyright (c) 2020-2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015-2016 The Qeditas developers *)
@@ -1010,8 +1010,8 @@ let assets_at_address_in_ledger_json raiseempty alpha par ledgerroot blkh =
 	      assets_at_address_in_ledger_json_history alpha par
 	with Not_found -> []
   in
-  let jhl = assets_at_address_in_ledger_json_history alpha par in
-  if not (jhl = []) then jal := ("historic",JsonArr(jhl))::!jal;
+(*  let jhl = assets_at_address_in_ledger_json_history alpha par in
+  if not (jhl = []) then jal := ("historic",JsonArr(jhl))::!jal; *)
   (!jal,!jwl)
 
 let printassets_in_ledger oc ledgerroot blkhght =
@@ -2887,9 +2887,159 @@ let query_at_block q pbh ledgerroot blkh =
 	  try
             let d = termaddr_addr (hashval_be160 h) in
             let j = proofgold_addr_jsoninfo true d pbh ledgerroot blkh in
-	    dbentries := JsonObj([("type",JsonStr("termid"));("termaddress",JsonStr(addr_pfgaddrstr d));("termaddressinfo",j)])::!dbentries
+	    dbentries := JsonObj([("type",JsonStr("termid"));("termaddress",JsonStr(addr_pfgaddrstr d));("termaddressinfo",j)])::!dbentries;
 	  with _ -> ()
 	end;
+        begin
+          try
+            let m = Hashtbl.find term_info_hf h in
+            match m with
+            | Prim(i) ->
+               dbentries := JsonObj([("type",JsonStr("termroot"));("hfbuiltin",JsonBool(true));("hfprimnum",JsonNum(Printf.sprintf "%d" i));("primname",JsonStr(Mathdata.hfprimnamesa.(i)))])::!dbentries
+            | _ ->
+               dbentries := JsonObj([("type",JsonStr("termroot"));("hfbuiltin",JsonBool(true));("trmpres",JsonStr(Mathdata.mg_nice_trm (Some(Mathdata.hfthyroot)) m))])::!dbentries;
+          with Not_found -> ()
+        end;
+        begin
+          try
+            let (a,tmroot) = Hashtbl.find obj_info_hf h in
+            dbentries := JsonObj([("type",JsonStr("obj"));("hfbuiltin",JsonBool(true));("stppres",JsonStr(Mathdata.mg_nice_stp (Some(Mathdata.hfthyroot)) a));("termroot",JsonStr(hashval_hexstring tmroot))])::!dbentries
+          with Not_found -> ()
+        end;
+        begin
+          try
+            let tmroot = Hashtbl.find prop_info_hf h in
+            dbentries := JsonObj([("type",JsonStr("prop"));("hfbuiltin",JsonBool(true));("termroot",JsonStr(hashval_hexstring tmroot))])::!dbentries
+          with Not_found -> ()
+        end;
+        begin
+          try
+            let (ah,pfgbh,otx) = Hashtbl.find (if !asset_id_hash_refreshing then asset_id_hash_table_bkp else asset_id_hash_table) h in
+            match otx with
+            | None ->
+               dbentries := JsonObj([("type",JsonStr("assetid"));("assethash",JsonStr(hashval_hexstring ah));("block",JsonStr(hashval_hexstring pfgbh))])::!dbentries
+            | Some(txid) ->
+               dbentries := JsonObj([("type",JsonStr("assetid"));("assethash",JsonStr(hashval_hexstring ah));("block",JsonStr(hashval_hexstring pfgbh));("tx",JsonStr(hashval_hexstring txid))])::!dbentries
+          with Not_found -> ()
+        end;
+        List.iter
+          (fun (m,aid,thyh,pfgbh,otx) ->
+            let thystr =
+              match thyh with
+              | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+              | None -> []
+            in
+            let txstr =
+              match otx with
+              | Some(txid) -> [("tx",JsonStr(hashval_hexstring txid))]
+              | None -> [("block",JsonStr(hashval_hexstring pfgbh))]
+            in
+            let creatorobj =
+              try
+                let (aid,bday,beta) = Hashtbl.find created_obj_info h in
+                [("creatorasobj",JsonObj([("creatoraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let ownerobj =
+              try
+                let (aid,bday,beta,gamma,r) = Hashtbl.find owns_obj_info h in
+                [("ownerasobj",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let creatorprop =
+              try
+                let (aid,bday,beta) = Hashtbl.find created_prop_info h in
+                [("creatorasprop",JsonObj([("creatoraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let ownerprop =
+              try
+                let (aid,bday,beta,gamma,r) = Hashtbl.find owns_prop_info h in
+                [("ownerasprop",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let al = thystr @ txstr @ creatorobj @ ownerobj @ creatorprop @ ownerprop in
+            let al = ("trmpres",JsonStr(Mathdata.mg_nice_trm thyh m))::al in
+            let al = ("type",JsonStr("termroot"))::al in
+            dbentries := JsonObj(al)::!dbentries)
+          (Hashtbl.find_all (if !term_info_refreshing then term_info_bkp else term_info) h);
+        List.iter
+          (fun (thyh,a,tmroot,prim) ->
+            let creatorobj =
+              try
+                let (aid,bday,beta) = Hashtbl.find created_obj_info h in
+                [("creatorasobj",JsonObj([("creatoraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let ownerobj =
+              try
+                let (aid,bday,beta,gamma,r) = Hashtbl.find owns_obj_info h in
+                [("ownerasobj",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let thyinfo =
+              match thyh with
+              | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+              | None -> []
+            in
+            let al = thyinfo @ creatorobj @ ownerobj in
+            let al = ("stppres",JsonStr(Mathdata.mg_nice_stp (Some(Mathdata.hfthyroot)) a))::al in
+            let al = ("termroot",JsonStr(hashval_hexstring tmroot))::al in
+            let al = ("type",JsonStr("obj"))::al in
+            let ar = ref al in
+            List.iter
+              (fun (m,aid,thyh2,pfgbh,otx) ->
+                if thyh = thyh2 then
+                  begin
+                    let txstr =
+                      match otx with
+                      | Some(txid) -> [("tx",JsonStr(hashval_hexstring txid))]
+                      | None -> [("block",JsonStr(hashval_hexstring pfgbh))]
+                    in
+                    ar := !ar @ txstr;
+                    ar := !ar @ [("trmpres",JsonStr(Mathdata.mg_nice_trm thyh m))]
+                  end)
+              (Hashtbl.find_all (if !term_info_refreshing then term_info_bkp else term_info) tmroot);
+            dbentries := JsonObj(!ar)::!dbentries)
+          (Hashtbl.find_all (if !term_info_refreshing then obj_info_bkp else obj_info) h);
+        List.iter
+          (fun (thyh,tmroot,prim) ->
+            let creatorprop =
+              try
+                let (aid,bday,beta) = Hashtbl.find created_prop_info h in
+                [("creatorasprop",JsonObj([("creatoraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let ownerprop =
+              try
+                let (aid,bday,beta,gamma,r) = Hashtbl.find owns_prop_info h in
+                [("ownerasprop",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let thyinfo =
+              match thyh with
+              | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+              | None -> []
+            in
+            let al = thyinfo @ creatorprop @ ownerprop in
+            let al = ("termroot",JsonStr(hashval_hexstring tmroot))::al in
+            let al = ("type",JsonStr("prop"))::al in
+            let ar = ref al in
+            List.iter
+              (fun (m,aid,thyh2,pfgbh,otx) ->
+                if thyh = thyh2 then
+                  begin
+                    let txstr =
+                      match otx with
+                      | Some(txid) -> [("tx",JsonStr(hashval_hexstring txid))]
+                      | None -> [("block",JsonStr(hashval_hexstring pfgbh))]
+                    in
+                    ar := !ar @ txstr;
+                    ar := !ar @ [("trmpres",JsonStr(Mathdata.mg_nice_trm thyh m))]
+                  end)
+              (Hashtbl.find_all (if !term_info_refreshing then term_info_bkp else term_info) tmroot);
+            dbentries := JsonObj(!ar)::!dbentries)
+          (Hashtbl.find_all (if !term_info_refreshing then prop_info_bkp else prop_info) h);
 	if !dbentries = [] then
 	  JsonObj([("response",JsonStr("unknown"));("msg",JsonStr("No associated information found"))])
 	else
@@ -3586,7 +3736,23 @@ let reportpubs oc f lr =
 		  | Logic.Docparam(h,a) -> Printf.fprintf f "Param %s (%s) : %s\n" (hashval_hexstring h) (hashval_hexstring (hashtag (hashopair2 thyh (hashpair h (Mathdata.hashtp a))) 32l)) (stp_str a)
 		  | Logic.Docdef(a,m) -> Printf.fprintf f "Def %s (%s) : %s := %s\n" (hashval_hexstring (Mathdata.tm_hashroot m)) (hashval_hexstring (hashtag (hashopair2 thyh (hashpair (Mathdata.tm_hashroot m) (Mathdata.hashtp a))) 32l)) (stp_str a) (trm_str m)
 		  | Logic.Docknown(m) -> Printf.fprintf f "Known %s (%s) : %s\n" (hashval_hexstring (Mathdata.tm_hashroot m)) (hashval_hexstring (hashtag (hashopair2 thyh (Mathdata.tm_hashroot m)) 33l)) (trm_str m)
-		  | Logic.Docpfof(m,_) -> Printf.fprintf f "Theorem %s (%s) : %s\n" (hashval_hexstring (Mathdata.tm_hashroot m)) (hashval_hexstring (hashtag (hashopair2 thyh (Mathdata.tm_hashroot m)) 33l)) (trm_str m)
+		  | Logic.Docpfof(m,d) ->
+                     Printf.fprintf f "Theorem %s (%s) : %s\n" (hashval_hexstring (Mathdata.tm_hashroot m)) (hashval_hexstring (hashtag (hashopair2 thyh (Mathdata.tm_hashroot m)) 33l)) (trm_str m);
+                     Printf.fprintf f "(PID-TRMROOT \"%s\" \"%s\")\n" (hashval_hexstring (hashtag (hashopair2 thyh (Mathdata.tm_hashroot m)) 33l)) (hashval_hexstring (Mathdata.tm_hashroot m));
+                     let usesknowns = ref [] in
+                     let rec g d =
+                       match d with
+                       | Logic.Known(h) -> if not (List.mem h !usesknowns) then usesknowns := h :: !usesknowns
+                       | Logic.PrAp(d1,d2) -> g d1; g d2
+                       | Logic.TmAp(d1,_) -> g d1
+                       | Logic.PrLa(_,d1) -> g d1
+                       | Logic.TmLa(_,d1) -> g d1
+                       | _ -> ()
+                     in
+                     g d;
+                     Printf.fprintf f "(PFUSES \"%s\"" (hashval_hexstring (Mathdata.tm_hashroot m));
+                     List.iter (fun h -> Printf.fprintf f " \"%s\"" (hashval_hexstring h)) !usesknowns;
+                     Printf.fprintf f ")\n";
 		  | Logic.Docconj(m) -> Printf.fprintf f "Conjecture %s (%s) : %s\n" (hashval_hexstring (Mathdata.tm_hashroot m)) (hashval_hexstring (hashtag (hashopair2 thyh (Mathdata.tm_hashroot m)) 33l)) (trm_str m))
 		(List.rev d)
 	    end
@@ -3687,3 +3853,240 @@ let createmultisig m jpks =
       let pubkeys = List.map (fun j -> match j with JsonStr(s) -> (s,hexstring_pubkey s) | _ -> raise (Failure "expected an array of pubkeys")) jpkl in
       createmultisig2 m pubkeys
   | _ -> raise (Failure "expected an array of pubkeys")
+
+let report_recenttxs_filtered p oc h n =
+  let reptxs = ref [] in
+  let i = ref 0 in
+  let (bhd,_) = DbBlockHeader.dbget h in
+  let bd = Block.DbBlockDelta.dbget h in
+  let blktm = bhd.timestamp in
+  let (par,blkh) =
+    match bhd.prevblockhash with
+    | Some(_,Poburn(h,k,_,_,_,_)) ->
+       let (pbh,_,_,_,_,_,blkh) = Db_outlinevals.dbget (hashpair h k) in
+       (Some(pbh,h,k),Int64.add blkh 1L)
+    | None -> (None,1L)
+  in
+  let blkidh = hashval_hexstring h in
+  List.iter
+    (fun (((_,tauout),_) as stau) ->
+      if List.exists p tauout then
+        let stxid = hashstx stau in
+        reptxs := JsonObj([("stx",JsonStr(hashval_hexstring stxid));("block",JsonStr(blkidh));("height",JsonNum(Int64.to_string blkh));("time",JsonNum(Int64.to_string blktm))])::!reptxs;
+        incr i)
+    bd.blockdelta_stxl;
+  let finish pbh =
+    match pbh with
+    | None ->
+       print_jsonval oc (JsonObj([("recenttxs",JsonArr(!reptxs))]));
+       Printf.fprintf oc "\n"
+    | Some(pbh) ->
+       print_jsonval oc (JsonObj([("recenttxs",JsonArr(!reptxs));("prevblock",JsonStr(hashval_hexstring pbh))]));
+       Printf.fprintf oc "\n"
+  in
+  match par with
+  | None -> finish None
+  | Some(pbh,plbk,pltx) ->
+     if !i < n then
+       let rec f lbk ltx =
+         let (bh,_,_,_,par,_,blkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
+         let (bhd,_) = DbBlockHeader.dbget bh in
+         let bd = Block.DbBlockDelta.dbget bh in
+         let blktm = bhd.timestamp in
+         List.iter
+           (fun (((_,tauout),_) as stau) ->
+             if List.exists p tauout then
+               let stxid = hashstx stau in
+               reptxs := JsonObj([("stx",JsonStr(hashval_hexstring stxid));("block",JsonStr(blkidh));("height",JsonNum(Int64.to_string blkh));("time",JsonNum(Int64.to_string blktm))])::!reptxs;
+               incr i)
+           bd.blockdelta_stxl;
+         match par with
+         | Some(plbk,pltx) ->
+            if !i < n then
+              f plbk pltx
+            else
+              let (pbh,_,_,_,_,_,_) = Db_outlinevals.dbget (hashpair plbk pltx) in
+              finish (Some(pbh))
+         | None ->
+            finish None
+       in
+       f plbk pltx
+     else
+       finish (Some(pbh))
+
+let report_recenttxs oc h n =
+  let p _ = true in
+  report_recenttxs_filtered p oc h n
+
+let report_recentdocs oc h n =
+  let p (_,(_,u)) =
+    match u with
+    | DocPublication(_,_,_,_) -> true
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
+let report_recentthms oc h n =
+  let p (_,(_,u)) =
+    match u with
+    | DocPublication(_,_,_,dl) ->
+       List.exists (fun di -> match di with Logic.Docpfof(_,_) -> true | _ -> false) dl
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
+let report_recentbountiesplaced oc h n =
+  let p (_,(_,u)) =
+    match u with
+    | Bounty(_) -> true
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
+let report_recentobjid_defined oc oid h n =
+  let p (_,(_,u)) =
+    match u with
+    | DocPublication(_,_,th,dl) ->
+       List.exists
+         (fun di ->
+           match di with
+             Logic.Docdef(a,m) ->
+              let trmroot = Mathdata.tm_hashroot m in
+              let objid = hashtag (hashopair2 th (hashpair trmroot (Mathdata.hashtp a))) 32l in
+              objid = oid
+           | _ -> false)
+         dl
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
+let report_recenttrmroot_defined oc oid h n =
+  let p (_,(_,u)) =
+    match u with
+    | DocPublication(_,_,th,dl) ->
+       List.exists
+         (fun di ->
+           match di with
+             Logic.Docdef(a,m) ->
+              let trmroot = Mathdata.tm_hashroot m in
+              trmroot = oid
+           | Logic.Docpfof(p,_) ->
+              let trmroot = Mathdata.tm_hashroot p in
+              trmroot = oid
+           | Logic.Docconj(p) ->
+              let trmroot = Mathdata.tm_hashroot p in
+              trmroot = oid
+           | _ -> false)
+         dl
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
+let report_recentpropid_proven oc pid h n =
+  let p (_,(_,u)) =
+    match u with
+    | DocPublication(_,_,th,dl) ->
+       List.exists
+         (fun di ->
+           match di with
+             Logic.Docpfof(p,_) ->
+              let trmroot = Mathdata.tm_hashroot p in
+              let propid = hashtag (hashopair2 th trmroot) 33l in
+              propid = pid
+           | _ -> false)
+         dl
+    | _ -> false
+  in
+  report_recenttxs_filtered p oc h n
+
+let report_bounties_collected oc h =
+  let spentfrom : (addr,hashval) Hashtbl.t = Hashtbl.create 1000 in
+  let ownsproppid : (addr,hashval) Hashtbl.t = Hashtbl.create 1000 in
+  let ownsprop : (addr,hashval) Hashtbl.t = Hashtbl.create 1000 in
+  let ownsnegprop : (addr,hashval) Hashtbl.t = Hashtbl.create 1000 in
+  let bountyat : (addr,int64) Hashtbl.t = Hashtbl.create 1000 in
+  let reptxs = ref [] in
+  let (bhd,_) = DbBlockHeader.dbget h in
+  let bd = Block.DbBlockDelta.dbget h in
+  let blktm = bhd.timestamp in
+  let (par,blkh) =
+    match bhd.prevblockhash with
+    | Some(_,Poburn(h,k,_,_,_,_)) ->
+       let (pbh,_,_,_,_,_,blkh) = Db_outlinevals.dbget (hashpair h k) in
+       (Some(pbh,h,k),Int64.add blkh 1L)
+    | None -> (None,1L)
+  in
+  let blkidh = hashval_hexstring h in
+  List.iter
+    (fun (((tauin,tauout),_) as stau) ->
+      let stxid = hashstx stau in
+      List.iter
+        (fun (alpha,_) ->
+          Hashtbl.add spentfrom alpha stxid)
+        tauin;
+      List.iter
+        (fun (alpha,(_,u)) ->
+          match u with
+          | Bounty(v) when v > 0L ->
+             (try let v1 = Hashtbl.find bountyat alpha in Hashtbl.replace bountyat alpha (Int64.add v1 v) with Not_found -> Hashtbl.add bountyat alpha v)
+          | OwnsProp(pid,_,_) -> Hashtbl.replace ownsproppid alpha pid; Hashtbl.add ownsprop alpha stxid
+          | OwnsNegProp -> Hashtbl.add ownsnegprop alpha stxid
+          | _ -> ())
+        tauout)
+    bd.blockdelta_stxl;
+  (**  to do: go through everything and then collect which bounties seem to have been spent and by proving which theory. probably need ownsprop and ownsnegprop info too **)
+  match par with
+  | None -> ()
+  | Some(pbh,plbk,pltx) ->
+     let rec f lbk ltx =
+       let (bh,_,_,_,par,_,blkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
+       let (bhd,_) = DbBlockHeader.dbget bh in
+       let bd = Block.DbBlockDelta.dbget bh in
+       let blktm = bhd.timestamp in
+       List.iter
+         (fun (((tauin,tauout),_) as stau) ->
+           let stxid = hashstx stau in
+           List.iter
+             (fun (alpha,_) ->
+               Hashtbl.add spentfrom alpha stxid)
+             tauin;
+           List.iter
+             (fun (alpha,(_,u)) ->
+               match u with
+               | Bounty(v) when v > 0L ->
+                  (try let v1 = Hashtbl.find bountyat alpha in Hashtbl.replace bountyat alpha (Int64.add v1 v) with Not_found -> Hashtbl.add bountyat alpha v)
+               | OwnsProp(pid,_,_) -> Hashtbl.replace ownsproppid alpha pid; Hashtbl.add ownsprop alpha stxid
+               | OwnsNegProp -> Hashtbl.add ownsnegprop alpha stxid
+               | _ -> ())
+             tauout)
+         bd.blockdelta_stxl;
+         match par with
+         | Some(plbk,pltx) ->
+            f plbk pltx
+         | None -> ()
+     in
+     f plbk pltx;
+     Hashtbl.iter
+       (fun alpha v ->
+         if Hashtbl.mem spentfrom alpha then
+           begin
+             try
+               let pid = Hashtbl.find ownsproppid alpha in
+               Printf.fprintf oc "(BOUNTY \"%s\" %Ld (POS \"%s\") (TXS" (addr_pfgaddrstr alpha) v (hashval_hexstring pid);
+               List.iter
+                 (fun h -> Printf.fprintf oc " \"%s\"" (hashval_hexstring h))
+                 (Hashtbl.find_all ownsprop alpha);
+               Printf.fprintf oc "))\n"
+             with Not_found ->
+                   if Hashtbl.mem ownsnegprop alpha then
+                     begin
+                       Printf.fprintf oc "(BOUNTY \"%s\" %Ld NEG (TXS" (addr_pfgaddrstr alpha) v;
+                       List.iter
+                         (fun h -> Printf.fprintf oc " \"%s\"" (hashval_hexstring h))
+                         (Hashtbl.find_all ownsnegprop alpha);
+                       Printf.fprintf oc "))\n"
+                     end
+           end
+       )
+       bountyat
+

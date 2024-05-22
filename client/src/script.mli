@@ -34,6 +34,8 @@ type gensignat =
 
 val verify_gensignat : int64 option -> Z.t -> gensignat -> addr -> bool * int64 option * int64 option
 
+val verify_gensignat2 : int64 option -> hashval -> Z.t -> gensignat -> addr -> bool * int64 option * int64 option
+
 val seo_gensignat : (int -> int -> 'a -> 'a) -> gensignat -> 'a -> 'a
 val sei_gensignat : (int -> 'a -> int * 'a) -> 'a -> gensignat * 'a
 

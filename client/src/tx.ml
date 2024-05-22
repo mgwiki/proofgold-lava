@@ -220,6 +220,21 @@ let check_spend_obligation_upto_blkh obday alpha (txhe:Z.t) s obl =
       else
 	raise BadOrMissingSignature
 
+let check_spend_obligation_upto_blkh2 obday alpha stxid (txhe:Z.t) s obl =
+  match obl with
+  | None -> (*** defaults to alpha with no block height restriction ***)
+      let (b,mbh,mtm) = verify_gensignat2 obday stxid txhe s alpha in
+      if b then
+	(true,mbh,mbh,mtm)
+      else
+	raise BadOrMissingSignature
+  | Some(gamma,lkh,_) ->
+      let (b,mbh,mtm) = verify_gensignat2 obday stxid txhe s (Hash.payaddr_addr gamma) in
+      if b then
+	(b,mbh,opmax mbh (Some(lkh)),mtm)
+      else
+	raise BadOrMissingSignature
+
 let check_spend_obligation obday alpha blkh tm (txhe:Z.t) s obl =
   try
     let (b,mbh1,mbh2,mtm) = check_spend_obligation_upto_blkh obday alpha txhe s obl in
@@ -324,6 +339,65 @@ let rec check_tx_in_signatures txhe outpl inpl al sl rl propowns =
   | _,_,_ ->
       raise BadOrMissingSignature
 
+let rec check_tx_in_signatures2 stxid txhe outpl inpl al sl rl propowns =
+  match inpl,al,sl with
+  | [],[],[] -> (true,None,None,None)
+  | (alpha,k)::inpr,(a::ar),sl when marker_or_bounty_p a -> (*** don't require signatures to spend markers and bounties; but there are conditions for the tx to be supported by a ctree ***)
+      if assetid a = k then
+	begin
+	  match a with
+	  | (_,bday,Some(_,_,_),Bounty(_)) when not (List.mem alpha propowns) -> (*** if a is a Bounty and there is no corresponding ownership being spent, then require a signature (allow bounties to be collected according to the obligation after lockheight has passed) ***)
+	      begin
+		try
+		  match sl with
+		  | s::sr ->
+		      let (s1,rl1) = getsig s rl in
+		      let (b,mbha,mbhb,mtm) = check_tx_in_signatures2 stxid txhe outpl inpr ar sr rl1 propowns in
+		      if b then
+			let (b,mbh2a,mbh2b,mtm2) = check_spend_obligation_upto_blkh2 (Some(bday)) alpha stxid txhe s1 (assetobl a) in
+			if b then
+			  (true,opmax mbha mbh2a,opmax mbhb mbh2b,opmax mtm mtm2)
+			else
+			  (false,None,None,None)
+		      else
+			(false,None,None,None)
+		  | [] -> raise Not_found
+		with Not_found -> raise BadOrMissingSignature
+	      end		      
+	  | _ ->
+	      check_tx_in_signatures2 stxid txhe outpl inpr ar sl rl propowns
+	end
+      else
+	raise BadOrMissingSignature
+  | (alpha,k)::inpr,(a::ar),(s::sr) ->
+      begin
+	try
+	  let (s1,rl1) = getsig s rl in
+	  if assetid a = k then
+	    let (b,mbha,mbhb,mtm) = check_tx_in_signatures2 stxid txhe outpl inpr ar sr rl1 propowns in
+	    if b then
+	      begin
+		try
+		  let (b,mbh2a,mbh2b,mtm2) = check_spend_obligation_upto_blkh2 (Some(assetbday a)) alpha stxid txhe s1 (assetobl a) in
+		  if b then
+		    (true,opmax mbha mbh2a,opmax mbhb mbh2b,opmax mtm mtm2)
+		  else
+		    (false,None,None,None)
+		with BadOrMissingSignature ->
+		  if check_move_obligation alpha txhe s1 (assetobl a) (assetpre a) outpl then
+		    (true,mbha,mbhb,mtm)
+		  else
+		    raise BadOrMissingSignature
+	      end
+	    else
+	      raise BadOrMissingSignature
+	  else
+	    raise BadOrMissingSignature
+	with Not_found -> raise BadOrMissingSignature
+      end
+  | _,_,_ ->
+      raise BadOrMissingSignature
+
 let rec check_tx_out_signatures txhe outpl sl rl =
   match outpl,sl with
   | [],[] -> true
@@ -376,8 +450,49 @@ let rec check_tx_out_signatures txhe outpl sl rl =
   | _::outpr,_ ->
       check_tx_out_signatures txhe outpr sl rl
 
+
+let seo_tx o g c = seo_prod (seo_list seo_addr_assetid) (seo_list seo_addr_preasset) o g c
+let sei_tx i c = sei_prod (sei_list sei_addr_assetid) (sei_list sei_addr_preasset) i c
+
+let seo_gensignat_or_ref o g c =
+  match g with
+  | GenSignatReal(s) ->
+      let c = o 1 0 c in
+      seo_gensignat o s c
+  | GenSignatRef(i) ->
+      let c = o 1 1 c in
+      seo_varintb o i c
+
+let sei_gensignat_or_ref i c =
+  let (b,c) = i 1 c in
+  if b = 0 then
+    let (s,c) = sei_gensignat i c in
+    (GenSignatReal(s),c)
+  else
+    let (j,c) = sei_varintb i c in
+    (GenSignatRef(j),c)
+
+let seo_txsigs o g c = seo_prod (seo_list (seo_option seo_gensignat_or_ref)) (seo_list (seo_option seo_gensignat_or_ref)) o g c
+let sei_txsigs i c = sei_prod (sei_list (sei_option sei_gensignat_or_ref)) (sei_list (sei_option sei_gensignat_or_ref)) i c
+let seo_stx o g c = seo_prod seo_tx seo_txsigs o g c
+let sei_stx i c = sei_prod sei_tx sei_txsigs i c
+
+let hashtxsigs g =
+  let s = Buffer.create 1000 in
+  seosbf (seo_txsigs seosb g (s,None));
+  sha256str_hashval (Buffer.contents s)
+
+(***
+ The hash of signed tx does depend on the signatures, and this hash is used as the id of the tx
+ (e.g., by Inv, STx and GetSTx network messages).
+ But the assetid created by the tx only depends on the hashtx of tau (see add_vout in assets.ml).
+ Since the assetid is what is referenced when spent by future txs, we have behavior like segwit.
+***)
+let hashstx (tau,tausigs) = hashpair (hashtx tau) (hashtxsigs tausigs)
+
 let tx_signatures_valid_asof_blkh al stau =
   let (tau,(sli,slo)) = stau in
+  let stxh = hashstx stau in
   let txh = if !Config.testnet then hashtag (hashtx tau) 288l else hashtx tau in (*** sign a modified hash for testnet ***)
   let txhe = hashval_big_int txh in
   let rec get_propowns tauin al =
@@ -388,7 +503,7 @@ let tx_signatures_valid_asof_blkh al stau =
     | [],[] -> []
     | _,_ -> raise BadOrMissingSignature (*** actually this means the asset list does not match the inputs ***)
   in
-  let (b,mbha,mbhb,mtm) = check_tx_in_signatures txhe (tx_outputs tau) (tx_inputs tau) al sli [] (get_propowns (tx_inputs tau) al) in
+  let (b,mbha,mbhb,mtm) = check_tx_in_signatures2 stxh txhe (tx_outputs tau) (tx_inputs tau) al sli [] (get_propowns (tx_inputs tau) al) in
   if b then
     if check_tx_out_signatures txhe (tx_outputs tau) slo [] then
       (mbha,mbhb,mtm)
@@ -456,45 +571,6 @@ let rec txout_update_ostree outpl sigt =
   | _::outpr -> txout_update_ostree outpr sigt
 
 let tx_update_ostree tau sigt = txout_update_ostree (tx_outputs tau) sigt
-
-let seo_tx o g c = seo_prod (seo_list seo_addr_assetid) (seo_list seo_addr_preasset) o g c
-let sei_tx i c = sei_prod (sei_list sei_addr_assetid) (sei_list sei_addr_preasset) i c
-
-let seo_gensignat_or_ref o g c =
-  match g with
-  | GenSignatReal(s) ->
-      let c = o 1 0 c in
-      seo_gensignat o s c
-  | GenSignatRef(i) ->
-      let c = o 1 1 c in
-      seo_varintb o i c
-
-let sei_gensignat_or_ref i c =
-  let (b,c) = i 1 c in
-  if b = 0 then
-    let (s,c) = sei_gensignat i c in
-    (GenSignatReal(s),c)
-  else
-    let (j,c) = sei_varintb i c in
-    (GenSignatRef(j),c)
-
-let seo_txsigs o g c = seo_prod (seo_list (seo_option seo_gensignat_or_ref)) (seo_list (seo_option seo_gensignat_or_ref)) o g c
-let sei_txsigs i c = sei_prod (sei_list (sei_option sei_gensignat_or_ref)) (sei_list (sei_option sei_gensignat_or_ref)) i c
-let seo_stx o g c = seo_prod seo_tx seo_txsigs o g c
-let sei_stx i c = sei_prod sei_tx sei_txsigs i c
-
-let hashtxsigs g =
-  let s = Buffer.create 1000 in
-  seosbf (seo_txsigs seosb g (s,None));
-  sha256str_hashval (Buffer.contents s)
-
-(***
- The hash of signed tx does depend on the signatures, and this hash is used as the id of the tx
- (e.g., by Inv, STx and GetSTx network messages).
- But the assetid created by the tx only depends on the hashtx of tau (see add_vout in assets.ml).
- Since the assetid is what is referenced when spent by future txs, we have behavior like segwit.
-***)
-let hashstx (tau,tausigs) = hashpair (hashtx tau) (hashtxsigs tausigs)
 
 let stxsize stau =
   let b = Buffer.create 1000 in

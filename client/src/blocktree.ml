@@ -32,6 +32,124 @@ let unconfswapredemptions : (hashval * int64 * stx) list ref = ref [];;
 
 let nextverifyledgertime : float ref = ref 0.0
 
+let extend_explorer_info lkey pfgbh bhd bd blkhght =
+  let spenthereinfo =
+    ref (if bhd.pureburn = None then
+           [(bhd.stakeassetid,pfgbh,None)]
+         else
+           [])
+  in
+  let handle_out otx (alpha,(aid,bday,obl,u)) =
+    Hashtbl.add asset_id_hash_history lkey (aid,hashasset (aid,bday,obl,u),pfgbh,otx);
+    match u with
+    | Bounty(v) ->
+       Hashtbl.add bounty_history_table lkey (alpha,aid,v,pfgbh,otx)
+    | OwnsObj(oid,gamma,r) ->
+       begin
+         match obl with
+         | Some(beta,_,_) ->
+            Hashtbl.add ownsobj_history_table lkey (oid,aid,bday,beta,gamma,r)
+         | None -> () (** impossible **)
+       end
+    | OwnsProp(pid,gamma,r) ->
+       begin
+         match obl with
+         | Some(beta,_,_) ->
+            Hashtbl.add ownsprop_history_table lkey (pid,aid,bday,beta,gamma,r)
+         | None -> () (** impossible **)
+       end
+    | OwnsNegProp ->
+       begin
+         match obl with
+         | Some(beta,_,_) ->
+            Hashtbl.add ownsnegprop_history_table lkey (alpha,aid,bday,beta)
+         | None -> () (** impossible **)
+       end
+    | TheoryPublication(beta,_,thyspec) ->
+       begin
+         let thyh = hashtheory (theoryspec_theory thyspec) in
+         let cnt = ref 0 in
+         List.iter
+           (fun i ->
+             match i with
+             | Logic.Thyprim(a) ->
+                let m = Logic.Prim(!cnt) in
+                let h = tm_hashroot m in
+                incr cnt;
+                Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,true)
+             | Thyaxiom(p) ->
+                let h = tm_hashroot p in
+                begin
+                  match p with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx);
+                end;
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                Hashtbl.add prop_history_table lkey (propid,thyh,h,true)
+             | Thydef(a,m) ->
+                let h = tm_hashroot m in
+                begin
+                  match m with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                end;
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false))
+           thyspec
+       end
+    | DocPublication(beta,_,thyh,dl) ->
+       begin
+         List.iter
+           (fun i ->
+             match i with
+             | Logic.Docpfof(p,_) ->
+                let h = tm_hashroot p in
+                begin
+                  match p with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx);
+                end;
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                Hashtbl.add prop_history_table lkey (propid,thyh,h,false)
+             | Docdef(a,m) ->
+                let h = tm_hashroot m in
+                begin
+                  match m with
+                  | TmH(_) -> ()
+                  | _ ->
+                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                end;
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false)
+             | _ -> ())
+           dl
+       end
+    | _ -> ()
+  in
+  let cstktxh = hashtx ([(p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)],bd.stakeoutput) in
+  List.iter (handle_out None) (add_vout blkhght cstktxh bd.stakeoutput 0l);
+  List.iter
+    (fun stau ->
+      let stxid = hashstx stau in
+      let (tau,_) = stau in
+      let txh = hashtx tau in
+      let (tauin,tauout) = tau in
+      List.iter
+        (fun (alpha,aid) -> spenthereinfo := (aid,pfgbh,Some(stxid))::!spenthereinfo)
+        tauin;
+      List.iter (handle_out (Some(stxid))) (add_vout blkhght txh tauout 0l))
+    bd.blockdelta_stxl;
+  match bhd.prevblockhash with
+  | Some(_,Poburn(plbk,pltx,_,_,_,_)) ->
+     Hashtbl.add spent_history_table lkey (!spenthereinfo,Some(hashpair plbk pltx));
+  | None ->
+     Hashtbl.add spent_history_table lkey (!spenthereinfo,None)
+
 let swapmatchoffer_ltccontracttx ltctxh ys litoshisout =
   let ltccontracttxb = Buffer.create 200 in
   Buffer.add_string ltccontracttxb "\002\000\000\000\001";
@@ -621,7 +739,8 @@ let rec process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd
             begin
               match valid_block tht sgt currhght csm tar ((bhd,bhs),bd) lmedtm burned txid1 vout1 with
               | Some(newtht,newsigt) ->
-	         Db_validblockvals.dbput (hashpair lbh ltxh) true;
+                 let lkey = hashpair lbh ltxh in
+	         Db_validblockvals.dbput lkey true;
 	         sync_last_height := max !sync_last_height currhght;
 	         update_theories thtr tht newtht;
 	         update_signatures sgtr sgt newsigt;
@@ -630,6 +749,7 @@ let rec process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd
 	         if dbp then
 	           begin
 	             DbBlockDelta.dbput h bd;
+                     extend_explorer_info lkey h bhd bd currhght;
                      rem_missing_delta h
 	           end;
 	         if forw then

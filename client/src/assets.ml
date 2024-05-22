@@ -573,3 +573,46 @@ let asset_from_json j =
       (aid,bday,obl,u)
   | _ ->
       raise (Failure("not an asset"))
+
+let asset_id_hash_history : (hashval,hashval * hashval * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
+let asset_id_hash_refreshing : bool ref = ref false
+let asset_id_hash_table_bkp : (hashval,hashval * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
+let asset_id_hash_table : (hashval,hashval * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
+let spent_table_refreshing : bool ref = ref false
+let spent_table_bkp : (hashval,(hashval * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
+let spent_table : (hashval,(hashval * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
+let spent_history_table : (hashval,((hashval * hashval * hashval option) list * hashval option)) Hashtbl.t = Hashtbl.create 10
+let bounty_sorted_refreshing : bool ref = ref false
+let bounty_sorted_bkp : (addr * hashval * int64 * hashval * hashval option) list ref = ref []
+let bounty_sorted : (addr * hashval * int64 * hashval * hashval option) list ref = ref []
+let bounty_history_table : (hashval,(addr * hashval * int64 * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
+let term_info_refreshing : bool ref = ref false
+let term_info_bkp : (hashval,trm * hashval * hashval option * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
+let term_info : (hashval,trm * hashval * hashval option * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
+let term_info_hf : (hashval,trm) Hashtbl.t = Hashtbl.create 10
+let obj_info_bkp : (hashval,hashval option * stp * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let obj_info : (hashval,hashval option * stp * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let obj_info_hf : (hashval,stp * hashval) Hashtbl.t = Hashtbl.create 10
+let prop_info_bkp : (hashval,hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let prop_info : (hashval,hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let prop_info_hf : (hashval,hashval) Hashtbl.t = Hashtbl.create 10
+let negprop_info_bkp : (hashval,hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let negprop_info : (hashval,hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let term_history_table : (hashval,hashval * trm * hashval * hashval option * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
+let obj_history_table : (hashval,hashval * hashval option * stp * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let prop_history_table : (hashval,hashval * hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
+let ownsobj_history_table : (hashval,hashval * hashval * int64 * payaddr * payaddr * int64 option) Hashtbl.t = Hashtbl.create 10
+let ownsprop_history_table : (hashval,hashval * hashval * int64 * payaddr * payaddr * int64 option) Hashtbl.t = Hashtbl.create 10
+let ownsnegprop_history_table : (hashval,addr * hashval * int64 * payaddr) Hashtbl.t = Hashtbl.create 10
+let created_obj_info : (hashval, hashval * int64 * payaddr) Hashtbl.t = Hashtbl.create 10
+let created_obj_info_bkp : (hashval, hashval * int64 * payaddr) Hashtbl.t = Hashtbl.create 10
+let owns_obj_info : (hashval, hashval * int64 * payaddr * payaddr * int64 option) Hashtbl.t = Hashtbl.create 10
+let owns_obj_info_bkp : (hashval, hashval * int64 * payaddr * payaddr * int64 option) Hashtbl.t = Hashtbl.create 10
+let created_prop_info : (hashval, hashval * int64 * payaddr) Hashtbl.t = Hashtbl.create 10
+let created_prop_info_bkp : (hashval, hashval * int64 * payaddr) Hashtbl.t = Hashtbl.create 10
+let owns_prop_info : (hashval, hashval * int64 * payaddr * payaddr * int64 option) Hashtbl.t = Hashtbl.create 10
+let owns_prop_info_bkp : (hashval, hashval * int64 * payaddr * payaddr * int64 option) Hashtbl.t = Hashtbl.create 10
+let created_negprop_info : (addr, hashval * int64 * payaddr) Hashtbl.t = Hashtbl.create 10
+let created_negprop_info_bkp : (addr, hashval * int64 * payaddr) Hashtbl.t = Hashtbl.create 10
+let owns_negprop_info : (addr, hashval * int64 * payaddr) Hashtbl.t = Hashtbl.create 10
+let owns_negprop_info_bkp : (addr, hashval * int64 * payaddr) Hashtbl.t = Hashtbl.create 10

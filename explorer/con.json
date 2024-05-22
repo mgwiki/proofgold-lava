@@ -1,0 +1,117 @@
+{"name": "map",
+ "children": [
+  {"name": "Tor", "size": 31790},
+  {"name": "MaybeNot", "children":[
+
+     {"name": "Australia", "children":[
+{"name": "Sydney", "size": 7}]},{"name": "Austria", "children":[
+{"name": "Sankt Pölten", "size": 3},
+{"name": "Vienna", "size": 40}]},{"name": "Bulgaria", "size": 31, "children":[
+]},{"name": "Canada", "children":[
+{"name": "Beauharnois", "size": 115},
+{"name": "Montreal", "size": 36},
+{"name": "Toronto", "size": 3},
+{"name": "*", "size": 273}]},{"name": "Czechia", "children":[
+{"name": "Prague", "size": 50},
+{"name": "Rumburk", "size": 1034}]},{"name": "Denmark", "children":[
+{"name": "Copenhagen", "size": 33},
+{"name": "Sønderborg", "size": 4}]},{"name": "Finland", "children":[
+{"name": "Helsinki", "size": 4},
+{"name": "*", "size": 1}]},{"name": "France", "children":[
+{"name": "Gravelines", "size": 9},
+{"name": "La Neuville-en-Hez", "size": 1},
+{"name": "Paris", "size": 30},
+{"name": "Strasbourg", "size": 9},
+{"name": "*", "size": 157}]},{"name": "Germany", "children":[
+{"name": "Birlenbach", "size": 3},
+{"name": "Düsseldorf", "size": 141},
+{"name": "Frankfurt am Main", "size": 99},
+{"name": "Nuremberg", "size": 152},
+{"name": "*", "size": 313}]},{"name": "Hong Kong", "children":[
+{"name": "Hong Kong", "size": 6},
+{"name": "Kowloon City", "size": 7},
+{"name": "*", "size": 17}]},{"name": "Hungary", "children":[
+{"name": "Budapest", "size": 60},
+{"name": "Dunakeszi", "size": 18},
+{"name": "Ecséd", "size": 13},
+{"name": "Érd", "size": 15},
+{"name": "Gyömrő", "size": 18},
+{"name": "Hatvan", "size": 39},
+{"name": "Jászberény", "size": 12},
+{"name": "Pécs", "size": 14},
+{"name": "Salgótarján", "size": 1},
+{"name": "Vecsés", "size": 10}]},{"name": "Iceland", "children":[
+{"name": "Reykjavik", "size": 6},
+{"name": "*", "size": 4}]},{"name": "India", "children":[
+{"name": "Mumbai", "size": 13},
+{"name": "New Delhi", "size": 1}]},{"name": "Indonesia", "size": 1, "children":[
+]},{"name": "Iran", "children":[
+{"name": "Isfahan", "size": 99}]},{"name": "Japan", "children":[
+{"name": "Tokyo", "size": 18},
+{"name": "*", "size": 3}]},{"name": "Latvia", "size": 47, "children":[
+]},{"name": "Lithuania", "children":[
+{"name": "Kaunas", "size": 27}]},{"name": "Luxembourg", "size": 2, "children":[
+]},{"name": "Moldova", "children":[
+{"name": "Chisinau", "size": 10}]},{"name": "Monaco", "children":[
+{"name": "Monaco", "size": 1}]},{"name": "Nicaragua", "children":[
+{"name": "Managua", "size": 5}]},{"name": "Panama", "size": 1, "children":[
+]},{"name": "Poland", "children":[
+{"name": "Warsaw", "size": 2},
+{"name": "*", "size": 11}]},{"name": "Portugal", "size": 3, "children":[
+]},{"name": "Romania", "children":[
+{"name": "Bucharest", "size": 36},
+{"name": "Iasi", "size": 5}]},{"name": "Russia", "children":[
+{"name": "Moscow", "size": 101},
+{"name": "St Petersburg", "size": 6},
+{"name": "*", "size": 1}]},{"name": "Serbia", "children":[
+{"name": "Belgrade", "size": 6}]},{"name": "Singapore", "children":[
+{"name": "Singapore", "size": 10},
+{"name": "*", "size": 6}]},{"name": "South Africa", "children":[
+{"name": "Johannesburg", "size": 1}]},{"name": "South Korea", "children":[
+{"name": "Seoul", "size": 20}]},{"name": "Spain", "children":[
+{"name": "Barcelona", "size": 7}]},{"name": "Sweden", "children":[
+{"name": "Borås", "size": 2},
+{"name": "Götene", "size": 4},
+{"name": "Gothenburg", "size": 16},
+{"name": "Karlskoga", "size": 2},
+{"name": "Linköping", "size": 36},
+{"name": "Örebro", "size": 3},
+{"name": "Stockholm", "size": 7},
+{"name": "*", "size": 70}]},{"name": "Switzerland", "children":[
+{"name": "Bern", "size": 10},
+{"name": "Zurich", "size": 79}]},{"name": "Taiwan", "children":[
+{"name": "Taipei", "size": 1}]},{"name": "Thailand", "size": 1, "children":[
+]},{"name": "The Netherlands", "children":[
+{"name": "Amsterdam", "size": 105},
+{"name": "Dronten", "size": 4},
+{"name": "Eygelshoven", "size": 1},
+{"name": "Kerkrade", "size": 32},
+{"name": "Naaldwijk", "size": 15},
+{"name": "Oude Meer", "size": 83},
+    {"name": "*", "size": 62}]},
+     {"name": "Ukraine", "children":[
+{"name": "Kyiv", "size": 253}]},{"name": "Undefined", "size": 1, "children":[
+]},{"name": "United Kingdom", "children":[
+{"name": "London", "size": 5},
+{"name": "Portsmouth", "size": 111}]},{"name": "United States", "children":[
+{"name": "Ashburn", "size": 31},
+{"name": "Buffalo", "size": 3},
+{"name": "Cedar Knolls", "size": 6},
+{"name": "Clifton", "size": 4},
+{"name": "Dallas", "size": 2},
+{"name": "Denver", "size": 3},
+{"name": "Elk Grove Village", "size": 3},
+{"name": "Fremont", "size": 6},
+{"name": "Hillsboro", "size": 19},
+{"name": "Houston", "size": 1031},
+{"name": "Las Vegas", "size": 3},
+{"name": "Los Angeles", "size": 6},
+{"name": "Miami", "size": 8},
+{"name": "New York", "size": 22},
+{"name": "North Charleston", "size": 1},
+{"name": "Reston", "size": 25},
+{"name": "Santa Clara", "size": 6},
+{"name": "Seattle", "size": 18},
+{"name": "Washington", "size": 8},
+{"name": "*", "size": 704}]},{"name": "Venezuela", "children":[
+    {"name": "Caracas", "size": 2}]}]}]}

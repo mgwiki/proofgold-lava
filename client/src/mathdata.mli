@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2023 The Proofgold Lava developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2016 The Qeditas developers *)
 (* Copyright (c) 2017-2018 The Dalilcoin developers *)
@@ -124,6 +124,29 @@ val print_tp : stp -> int -> unit
 
 val invert_neg_prop : trm -> trm
 
+val mgnice : bool ref
+val mgnicestp : bool ref
+val mgnatnotation : bool ref
+
+val mglegend : (hashval,string) Hashtbl.t
+val mglegendp : (hashval,string) Hashtbl.t
+val mgifthenelse : (hashval,unit) Hashtbl.t
+val mgbinder : (hashval,string) Hashtbl.t
+val mgprefixop : (hashval,string) Hashtbl.t
+val mgpostfixop : (hashval,string) Hashtbl.t
+val mginfixop : (hashval,string) Hashtbl.t
+val mgimplop : (hashval,unit) Hashtbl.t
+val mgrootassoc : (hashval,hashval) Hashtbl.t
+val prefixpriorities : (int,unit) Hashtbl.t
+val disallowedprefixpriorities : (int,unit) Hashtbl.t
+val rightinfixpriorities : (int,unit) Hashtbl.t
+val disallowedrightinfixpriorities : (int,unit) Hashtbl.t
+val penv_preop : (string,int) Hashtbl.t
+type picase = Postfix | InfixNone | InfixLeft | InfixRight
+val penv_postinfop : (string,int * picase) Hashtbl.t
+val penv_binder : (string,unit) Hashtbl.t
+val printenv_as_legend : unit -> unit
+
 val json_theoryspec : theoryspec -> jsonval
 val json_signaspec : hashval option -> signaspec -> jsonval
 val json_doc : hashval option -> doc -> jsonval
@@ -135,3 +158,11 @@ val trm_from_json : jsonval -> trm
 val theoryspec_from_json : jsonval -> theoryspec
 val signaspec_from_json : jsonval -> signaspec
 val doc_from_json : jsonval -> doc
+
+val mgdoc_out : out_channel -> hashval option -> doc -> unit
+val mg_nice_stp : hashval option -> stp -> string
+val mg_nice_trm : hashval option -> trm -> string
+val hfthyroot : hashval
+val hfprimnamesa : string array
+
+

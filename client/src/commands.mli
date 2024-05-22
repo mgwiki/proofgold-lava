@@ -1,3 +1,4 @@
+(* Copyright (c) 2021-2023 The Proofgold Lava developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015 The Qeditas developers *)
 (* Copyright (c) 2017-2019 The Dalilcoin developers *)
@@ -100,3 +101,14 @@ val createhtlc2 : Be160.t -> Be160.t -> int32 -> bool -> hashval -> p2shaddr * i
 val createhtlc : Be160.t -> Be160.t -> int32 -> bool -> hashval -> p2shaddr * int list * hashval
 val createmultisig2 : int -> (string * ((Z.t * Z.t) * bool)) list -> p2shaddr * int list
 val createmultisig : int -> jsonval -> p2shaddr * int list
+
+val report_recenttxs : out_channel -> hashval -> int -> unit
+val report_recentdocs : out_channel -> hashval -> int -> unit
+val report_recentthms : out_channel -> hashval -> int -> unit
+val report_recentbountiesplaced : out_channel -> hashval -> int -> unit
+
+val report_recenttrmroot_defined : out_channel -> hashval -> hashval -> int -> unit
+val report_recentobjid_defined : out_channel -> hashval -> hashval -> int -> unit
+val report_recentpropid_proven : out_channel -> hashval -> hashval -> int -> unit
+
+val report_bounties_collected : out_channel -> hashval -> unit
