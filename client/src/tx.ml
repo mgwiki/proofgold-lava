@@ -20,27 +20,33 @@ open Cryptocurr
 open Signat
 open Script
 
+(* Define a type for transactions, which consist of a list of inputs and a list of outputs. *)
 type tx = addr_assetid list * addr_preasset list
 
+(* Compute the hash of a transaction by hashing its inputs and outputs. *)
 let hashtx (inpl,outpl) =
   hashpair
     (hashlist (List.map hash_addr_assetid inpl))
     (hashlist (List.map hash_addr_preasset outpl))
 
+(* Extract the inputs and outputs from a transaction. *)
 let tx_inputs ((inpl,outpl):tx) = inpl
 let tx_outputs ((inpl,outpl):tx) = outpl
 
+(* Check whether a list contains any duplicate elements. *)
 let rec no_dups l =
   match l with
   | [] -> true
   | x::r when List.mem x r -> false
   | _::r -> no_dups r
 
+(* Check whether a transaction has at least one input and no duplicate inputs. *)
 let tx_inputs_valid inpl =
   match inpl with
   | [] -> false
   | _ -> no_dups inpl
 
+(* Check whether a transaction has at least one input and no duplicate inputs, and print an error message if it does not. *)
 let tx_inputs_valid_oc oc inpl =
   match inpl with
   | [] ->
@@ -55,7 +61,7 @@ let tx_inputs_valid_oc oc inpl =
 	  false
 	end
 
-(*** Ensure at most one owner is declared for each object/proposition ***)
+(* Ensure at most one owner is declared for each object/proposition. *)
 let rec tx_outputs_valid_one_owner outpl ool pol nol =
   match outpl with
   | (alpha,(_,OwnsObj(h,beta,io)))::outpr ->
@@ -76,6 +82,7 @@ let rec tx_outputs_valid_one_owner outpl ool pol nol =
   | _::outpr -> tx_outputs_valid_one_owner outpr ool pol nol
   | [] -> true
 
+(* Ensure at most one owner is declared for each object/proposition, and print an error message if there are any duplicates. *)
 let rec tx_outputs_valid_one_owner_oc oc outpl ool pol nol =
   match outpl with
   | (alpha,(_,OwnsObj(h,beta,io)))::outpr ->
@@ -99,7 +106,7 @@ let rec tx_outputs_valid_one_owner_oc oc outpl ool pol nol =
   | _::outpr -> tx_outputs_valid_one_owner_oc oc outpr ool pol nol
   | [] -> true
 
-(*** Ensure ownership deeds are sent to term addresses and publications are sent to publication addresses. ***)
+(* Ensure ownership deeds are sent to term addresses and publications are sent to publication addresses. *)
 let rec tx_outputs_valid_addr_cats outpl =
   match outpl with
   | (alpha,(_,Currency(_)))::outpr -> payaddr_p alpha && tx_outputs_valid_addr_cats outpr (*** currency should only be published to pay addresses ***)
@@ -122,10 +129,11 @@ let rec tx_outputs_valid_addr_cats outpl =
   | _::outpr -> tx_outputs_valid_addr_cats outpr
   | [] -> true
 
+(* Ensure ownership deeds are sent to term addresses and publications are sent to publication addresses, and print an error message if there are any violations. *)
 let rec tx_outputs_valid_addr_cats_oc oc outpl =
   match outpl with
   | (alpha,(_,Currency(_)))::outpr ->
-      if payaddr_p alpha then (*** currency should only be published to pay addresses ***)
+      if payaddr_p alpha then (* currency should only be published to pay addresses *)
 	tx_outputs_valid_addr_cats outpr
       else
 	(Printf.fprintf oc "tx invalid since Currency should be sent to a pay address, not %s\n" (Cryptocurr.addr_pfgaddrstr alpha); false)
@@ -179,35 +187,45 @@ let rec tx_outputs_valid_addr_cats_oc oc outpl =
   | _::outpr -> tx_outputs_valid_addr_cats_oc oc outpr
   | [] -> true
 
+(* Check whether a transaction's outputs are valid by ensuring that there is at most one owner for each object/proposition and that ownership deeds are sent to term addresses and publications are sent to publication addresses. *)
 let tx_outputs_valid (outpl: addr_preasset list) =
   tx_outputs_valid_one_owner outpl [] [] []
     &&
   tx_outputs_valid_addr_cats outpl 
 
+(* Check whether a transaction's outputs are valid by ensuring that there is at most one owner for each object/proposition and that ownership deeds are sent to term addresses and publications are sent to publication addresses, and print an error message if there are any violations. *)
 let tx_outputs_valid_oc oc (outpl: addr_preasset list) =
   tx_outputs_valid_one_owner_oc oc outpl [] [] []
     &&
   tx_outputs_valid_addr_cats_oc oc outpl 
 
+(* Check whether a transaction is valid by checking that its inputs and outputs are valid. *)
 let tx_valid tau = tx_inputs_valid (tx_inputs tau) && tx_outputs_valid (tx_outputs tau)
 
+(* Check whether a transaction is valid by checking that its inputs and outputs are valid, and print an error message if it is not. *)
 let tx_valid_oc oc tau = tx_inputs_valid_oc oc (tx_inputs tau) && tx_outputs_valid_oc oc (tx_outputs tau)
 
+(* Define a type for signatures, which can either be a real signature or a reference to a signature in a list. *)
 type gensignat_or_ref = GenSignatReal of gensignat | GenSignatRef of int
+
+(* Define a type for signed transactions, which consist of a transaction and a list of input and output signatures. *)
 type txsigs = gensignat_or_ref option list * gensignat_or_ref option list
 type stx = tx * txsigs
 
+(* Raise an exception if a signature is missing or invalid. *)
 exception BadOrMissingSignature
 
+(* Compute the maximum of two optional big integers. *)
 let opmax b1 b2 =
   match (b1,b2) with
   | (Some(b1),Some(b2)) -> if b1 > b2 then Some(b1) else Some(b2)
   | (_,None) -> b1
   | _ -> b2
 
+(* Check whether a signature satisfies a spending obligation up to a certain block height. *)
 let check_spend_obligation_upto_blkh obday alpha (txhe:Z.t) s obl =
   match obl with
-  | None -> (*** defaults to alpha with no block height restriction ***)
+  | None -> (* defaults to alpha with no block height restriction *)
       let (b,mbh,mtm) = verify_gensignat obday txhe s alpha in
       if b then
 	(true,mbh,mbh,mtm)
@@ -220,9 +238,10 @@ let check_spend_obligation_upto_blkh obday alpha (txhe:Z.t) s obl =
       else
 	raise BadOrMissingSignature
 
+(* Check whether a signature satisfies a spending obligation up to a certain block height, given the transaction's stxid. *)
 let check_spend_obligation_upto_blkh2 obday alpha stxid (txhe:Z.t) s obl =
   match obl with
-  | None -> (*** defaults to alpha with no block height restriction ***)
+  | None -> (* defaults to alpha with no block height restriction *)
       let (b,mbh,mtm) = verify_gensignat2 obday stxid txhe s alpha in
       if b then
 	(true,mbh,mbh,mtm)
@@ -235,11 +254,12 @@ let check_spend_obligation_upto_blkh2 obday alpha stxid (txhe:Z.t) s obl =
       else
 	raise BadOrMissingSignature
 
+(* Check whether a signature satisfies a spending obligation for a given block height and time. *)
 let check_spend_obligation obday alpha blkh tm (txhe:Z.t) s obl =
   try
     let (b,mbh1,mbh2,mtm) = check_spend_obligation_upto_blkh obday alpha txhe s obl in
     if b then
-      if blkh < Utils.lockingfixsoftforkheight then (** lock was actually ignored before this height due to a bug **)
+      if blkh < Utils.lockingfixsoftforkheight then (* lock was actually ignored before this height due to a bug *)
         match (mbh1,mtm) with
         | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
         | (Some(bh2),None) -> bh2 <= blkh
@@ -255,18 +275,20 @@ let check_spend_obligation obday alpha blkh tm (txhe:Z.t) s obl =
       false
   with BadOrMissingSignature -> false
 
+(* Check whether a signature satisfies a move obligation. *)
 let check_move_obligation alpha txhe s obl2 u2 outpl =
   try
-    if not (payaddr_p alpha) then raise Not_found; (*** things held and termaddrs and pubaddrs should not be "moved" in this way ***)
+    if not (payaddr_p alpha) then raise Not_found; (* things held and termaddrs and pubaddrs should not be "moved" in this way *)
     ignore (List.find (fun z -> let (beta,(obl,u)) = z in obl = obl2 && u = u2) outpl);
     let (b,mbh,mtm) = verify_gensignat None txhe s alpha in
-    b && mbh = None && mtm = None (*** insist that moves do not depend on the time or block height (for simplicity) ***)
+    b && mbh = None && mtm = None (* insist that moves do not depend on the time or block height (for simplicity) *)
   with Not_found -> false
 
+(* Extract a signature from a list of signatures, given its index. *)
 let getsig s rl =
   match s with
   | Some(GenSignatReal(s)) -> (s,s::rl)
-  | Some(GenSignatRef(i)) -> (*** only allow up to 64K signatures on the list; should be much less than this in practice ***)
+  | Some(GenSignatRef(i)) -> (* only allow up to 64K signatures on the list; should be much less than this in practice *)
       if i < 65535 && i >= 0 then
 	(List.nth rl i,rl)
       else
@@ -274,12 +296,14 @@ let getsig s rl =
   | None ->
       raise BadOrMissingSignature
 
+(* Check whether an asset pre is a marker or a bounty. *)
 let marker_or_bounty_p a =
   match assetpre a with
   | Marker -> true
   | Bounty(_) -> true
   | _ -> false
 
+(* Check whether a transaction's inputs are valid and have valid signatures, and compute the maximum block height and time specified in the signatures. *)
 let rec check_tx_in_signatures txhe outpl inpl al sl rl propowns =
   match inpl,al,sl with
   | [],[],[] -> (true,None,None,None)
@@ -339,6 +363,7 @@ let rec check_tx_in_signatures txhe outpl inpl al sl rl propowns =
   | _,_,_ ->
       raise BadOrMissingSignature
 
+(* Check whether a transaction's inputs are valid and have valid signatures, given the transaction's stxid, and compute the maximum block height and time specified in the signatures. *)
 let rec check_tx_in_signatures2 stxid txhe outpl inpl al sl rl propowns =
   match inpl,al,sl with
   | [],[],[] -> (true,None,None,None)
@@ -398,6 +423,7 @@ let rec check_tx_in_signatures2 stxid txhe outpl inpl al sl rl propowns =
   | _,_,_ ->
       raise BadOrMissingSignature
 
+(* Check whether a transaction's outputs have valid signatures. *)
 let rec check_tx_out_signatures txhe outpl sl rl =
   match outpl,sl with
   | [],[] -> true
@@ -450,10 +476,13 @@ let rec check_tx_out_signatures txhe outpl sl rl =
   | _::outpr,_ ->
       check_tx_out_signatures txhe outpr sl rl
 
-
+(* Compute the serialization of a transaction. *)
 let seo_tx o g c = seo_prod (seo_list seo_addr_assetid) (seo_list seo_addr_preasset) o g c
+
+(* Deserialize a transaction. *)
 let sei_tx i c = sei_prod (sei_list sei_addr_assetid) (sei_list sei_addr_preasset) i c
 
+(* Compute the serialization of a signature. *)
 let seo_gensignat_or_ref o g c =
   match g with
   | GenSignatReal(s) ->
@@ -463,6 +492,7 @@ let seo_gensignat_or_ref o g c =
       let c = o 1 1 c in
       seo_varintb o i c
 
+(* Deserialize a signature. *)
 let sei_gensignat_or_ref i c =
   let (b,c) = i 1 c in
   if b = 0 then
@@ -472,15 +502,24 @@ let sei_gensignat_or_ref i c =
     let (j,c) = sei_varintb i c in
     (GenSignatRef(j),c)
 
+(* Compute the serialization of a list of signatures. *)
 let seo_txsigs o g c = seo_prod (seo_list (seo_option seo_gensignat_or_ref)) (seo_list (seo_option seo_gensignat_or_ref)) o g c
+
+(* Deserialize a list of signatures. *)
 let sei_txsigs i c = sei_prod (sei_list (sei_option sei_gensignat_or_ref)) (sei_list (sei_option sei_gensignat_or_ref)) i c
+
+(* Compute the serialization of a signed transaction. *)
 let seo_stx o g c = seo_prod seo_tx seo_txsigs o g c
+
+(* Deserialize a signed transaction. *)
 let sei_stx i c = sei_prod sei_tx sei_txsigs i c
 
+(* Compute the hash of a signed transaction. *)
 let hashtxsigs g =
   let s = Buffer.create 1000 in
   seosbf (seo_txsigs seosb g (s,None));
   sha256str_hashval (Buffer.contents s)
+
 
 (***
  The hash of signed tx does depend on the signatures, and this hash is used as the id of the tx
@@ -488,8 +527,11 @@ let hashtxsigs g =
  But the assetid created by the tx only depends on the hashtx of tau (see add_vout in assets.ml).
  Since the assetid is what is referenced when spent by future txs, we have behavior like segwit.
 ***)
+
+(* Compute the hash of a signed transaction, which is used as its ID. *)
 let hashstx (tau,tausigs) = hashpair (hashtx tau) (hashtxsigs tausigs)
 
+(* Check whether a signed transaction's signatures are valid as of a certain block height. *)
 let tx_signatures_valid_asof_blkh al stau =
   let (tau,(sli,slo)) = stau in
   let stxh = hashstx stau in
@@ -512,12 +554,14 @@ let tx_signatures_valid_asof_blkh al stau =
   else
     raise BadOrMissingSignature
 
+(* Estimate the number of required input signatures for a transaction. *)
 let rec estimate_required_in_signatures al =
   match al with
   | [] -> 0
   | (a::ar) when marker_or_bounty_p a -> estimate_required_in_signatures ar
   | (a::ar) -> 1+ estimate_required_in_signatures ar
 
+(* Estimate the number of required output signatures for a transaction. *)
 let rec estimate_required_out_signatures outpl =
   match outpl with
   | [] -> 0
@@ -526,9 +570,11 @@ let rec estimate_required_out_signatures outpl =
   | (_,(_,DocPublication(alpha,n,th,d)))::outpr -> 1 + estimate_required_out_signatures outpr
   | _::outpr -> estimate_required_out_signatures outpr
 
+(* Estimate the total number of required signatures for a transaction. *)
 let estimate_required_signatures al (tauin,tauout) =
   estimate_required_in_signatures al + estimate_required_out_signatures tauout
 
+(* Check whether a signed transaction's signatures are valid for a given block height and time. *)
 let tx_signatures_valid blkh tm al stau =
   try
     let (mbha,mbhb,mtm) = tx_signatures_valid_asof_blkh al stau in
@@ -546,6 +592,7 @@ let tx_signatures_valid blkh tm al stau =
       | (None,None) -> true
   with BadOrMissingSignature -> false
 
+(* Update an obligation tree with the theories published in a transaction's outputs. *)
 let rec txout_update_ottree outpl tht =
   match outpl with
   | [] -> tht
@@ -559,8 +606,10 @@ let rec txout_update_ottree outpl tht =
       end
   | _::outpr -> txout_update_ottree outpr tht
 
+(* Update an obligation tree with the theories published in a transaction's outputs. *)
 let tx_update_ottree tau tht = txout_update_ottree (tx_outputs tau) tht
 
+(* Update an obligation tree with the signatures published in a transaction's outputs. *)
 let rec txout_update_ostree outpl sigt =
   match outpl with
   | [] -> sigt
@@ -570,18 +619,23 @@ let rec txout_update_ostree outpl sigt =
       txout_update_ostree outpr (Some(ostree_insert sigt (hashval_bitseq thsgh) (th,sg)))
   | _::outpr -> txout_update_ostree outpr sigt
 
+(* Update an obligation tree with the signatures published in a transaction's outputs. *)
 let tx_update_ostree tau sigt = txout_update_ostree (tx_outputs tau) sigt
 
+(* Compute the size of a signed transaction. *)
 let stxsize stau =
   let b = Buffer.create 1000 in
   seosbf (seo_stx seosb stau (b,None));
   String.length (Buffer.contents b)
 
+(* Define a module for storing and retrieving signed transactions in a database. *)
 module DbSTx = Dbmbasic (struct type t = stx let basedir = "stx" let seival = sei_stx seis let seoval = seo_stx seosb end)
 
+(* Serialize an address-assetid pair to JSON. *)
 let json_addr_assetid (alpha,h) =
   JsonObj([("address",JsonStr(addr_pfgaddrstr alpha));("assetid",JsonStr(hashval_hexstring h))])
 
+(* Deserialize an address-assetid pair from JSON. *)
 let addr_assetid_from_json j =
   match j with
   | JsonObj(al) ->
@@ -590,6 +644,7 @@ let addr_assetid_from_json j =
       (alpha,h)
   | _ -> raise (Failure("not a pair of an address with an asset id"))
 
+(* Serialize an address-preasset pair to JSON. *)
 let json_addr_preasset (alpha,(obl,u)) =
   match obl with
   | None ->
@@ -602,6 +657,7 @@ let json_addr_preasset (alpha,(obl,u)) =
 				      ("reward",JsonBool(r))]));
 	       ("preasset",json_preasset u)])
 
+(* Serialize a list of transaction outputs to JSON. *)
 let rec json_txouts txh txouts i =
   match txouts with
   | [] -> []
@@ -621,9 +677,11 @@ let rec json_txouts txh txouts i =
       in
       j::json_txouts txh txoutr (i+1)
 
+(* Serialize a transaction to JSON. *)
 let json_tx (inpl,outpl) =
   JsonObj([("vin",JsonArr(List.map json_addr_assetid inpl));("vout",JsonArr(json_txouts (hashtx (inpl,outpl)) outpl 0))])
 
+(* Deserialize a transaction from JSON. *)
 let tx_from_json j =
   match j with
   | JsonObj(al) ->
@@ -652,14 +710,17 @@ let tx_from_json j =
 	| _,_ -> raise (Failure("not a tx"))
       end
   | _ -> raise (Failure("not a tx"))
-      
+
+(* Serialize a gensignat_or_ref option to JSON. *)
 let json_gensignat_or_ref_option s =
   match s with
   | Some(GenSignatReal(gs)) -> json_gensignat gs
   | Some(GenSignatRef(n)) -> JsonNum(string_of_int n)
   | None -> JsonObj([])
 
+(* Serialize a txsigs value to JSON. *)
 let json_txsigs (insigs,outsigs) =
   JsonObj([("insigs",JsonArr(List.map json_gensignat_or_ref_option insigs));("outsigs",JsonArr(List.map json_gensignat_or_ref_option outsigs))])
 
+(* Serialize a signed transaction to JSON. *)
 let json_stx (tau,stau) = JsonObj([("type",JsonStr("stx"));("tx",json_tx tau);("txsigs",json_txsigs stau)])
