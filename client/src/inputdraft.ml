@@ -8,8 +8,10 @@ open Logic
 open Mathdata
 open Cryptocurr
 
+(* Check if a character is whitespace *)
 let whitespace_p c = c = ' ' || c = '\t' || c = '\r' || c = '\n';;
 
+(* Skip over whitespace and comments in the input channel *)
 let skip_whitespace ch =
   try
     while true do
@@ -28,6 +30,7 @@ let skip_whitespace ch =
   with Exit ->
     seek_in ch (pos_in ch - 1);;
 
+(* Read the next token from the input channel *)
 let input_token ch =
   skip_whitespace ch;
   let tokb = Buffer.create 10 in
@@ -43,6 +46,7 @@ let input_token ch =
   with Exit ->
     Buffer.contents tokb;;
 
+(* Read a list of tokens enclosed in square brackets from the input channel *)
 let input_token_rev_list ch =
   let rec input_token_rev_list_r acc =
     let tok = input_token ch in
@@ -57,6 +61,7 @@ let input_token_rev_list ch =
   else
     raise (Failure (Printf.sprintf "expected [ but found %s" stok))
 
+(* Return the position of an element in a list, raising Not_found if not present *)
 let pos x l =
   let rec posr x l i =
     match l with
@@ -66,6 +71,7 @@ let pos x l =
   in
   posr x l 0;;
 
+(* Read a logic type from the input channel, using a hash table to look up base types *)
 let rec input_stp bash ch tvl =
   let l = input_token ch in
   if l = "TpArr" then
@@ -81,6 +87,7 @@ let rec input_stp bash ch tvl =
     with Not_found ->
       raise (Failure (Printf.sprintf "Unknown type %s" l));;
 
+(* Read a logic term from the input channel, using hash tables to look up base types and previously defined terms *)
 let rec input_trm bash trmh ch tvl vl =
   let l = input_token ch in
   if l = "Ap" then
@@ -129,6 +136,7 @@ let rec input_trm bash trmh ch tvl vl =
       with Not_found ->
 	raise (Failure (Printf.sprintf "Unknown term %s" l));;
 
+(* Read a proof term from the input channel, using hash tables to look up base types, previously defined terms, and previously proven propositions *)
 let rec input_pf bash trmh proph ch tvl vl hl =
   let l = input_token ch in
   if l = "PrAp" then
@@ -164,6 +172,7 @@ let rec input_pf bash trmh proph ch tvl vl hl =
       with Not_found ->
 	raise (Failure (Printf.sprintf "Unknown known or hyp ref %s" l))
 
+(* Read a theory specification from the input channel *)
 let input_theoryspec ch =
   let basec = ref 0 in
   let baseh : (string,int) Hashtbl.t = Hashtbl.create 10 in
@@ -362,17 +371,22 @@ let input_theoryspec ch =
   | End_of_file -> close_in_noerr ch; (!thyspec,!nonce,!gamma,proph,prophrev,propownsh,proprightsh)
   | e -> close_in_noerr ch; raise e;;
 
+(* Function to lookup a signature in the signature tree, raising a failure
+   if the signature is not found *)
 let ostree_lookup_fail sgt h =
   try
     ostree_lookup sgt h
   with Not_found ->
     raise (Failure (Printf.sprintf "Could not find signature %s\n" (match h with Some(h) -> hashval_hexstring h | None -> "Empty")))
 
+(* Function to associate names with objects and propositions in a signature,
+   raising a failure if there are insufficient or too many names given *)
 let assoc_signa objhrev prophrev sgt sdone paramh trmh proph sg tmnl knnl =
   let tmnlr = ref tmnl in
   let knnlr = ref knnl in
   let rec assoc_signa_r sg =
     let (isl,(tml,knl)) = sg in
+    (* Process the imported signatures *)
     List.iter
       (fun h ->
 	if not (Hashtbl.mem sdone h) then
@@ -382,6 +396,7 @@ let assoc_signa objhrev prophrev sgt sdone paramh trmh proph sg tmnl knnl =
 	    assoc_signa_r sg2
 	  end)
       (List.rev isl);
+    (* Process the object names *)
     List.iter
       (fun ((h,a),_) ->
 	match !tmnlr with
@@ -392,6 +407,7 @@ let assoc_signa objhrev prophrev sgt sdone paramh trmh proph sg tmnl knnl =
 	    tmnlr := nr
 	| [] -> raise (Failure "insufficient obj names given with import"))
       (List.rev tml);
+    (* Process the proposition names *)
     List.iter
       (fun (h,p) ->
 	match !knnlr with
@@ -403,6 +419,7 @@ let assoc_signa objhrev prophrev sgt sdone paramh trmh proph sg tmnl knnl =
       (List.rev knl);
   in
   assoc_signa_r sg;
+  (* Check that all names have been used *)
   begin
     match (!tmnlr,!knnlr) with
     | (nm1::_,nm2::_) -> raise (Failure (Printf.sprintf "too many names given starting at obj name %s and prop name %s" nm1 nm2))
@@ -411,6 +428,7 @@ let assoc_signa objhrev prophrev sgt sdone paramh trmh proph sg tmnl knnl =
     | _ -> ()
   end
 
+(* Function to read a signature specification from an input channel *)
 let input_signaspec ch th sgt =
   let basec = ref 0 in
   let baseh : (string,int) Hashtbl.t = Hashtbl.create 10 in
@@ -423,6 +441,7 @@ let input_signaspec ch th sgt =
   let signaspec = ref [] in
   let nonce = ref None in
   let gamma = ref None in
+  (* Function to process a single line of the signature specification *)
   let pr l f =
     try
       f()
@@ -432,6 +451,7 @@ let input_signaspec ch th sgt =
   try
     while true do
       let l = input_token ch in
+      (* Process the nonce *)
       if l = "Nonce" then
 	pr l
 	  (fun () ->
@@ -439,6 +459,7 @@ let input_signaspec ch th sgt =
 	    match !nonce with
 	    | None -> nonce := Some(hexstring_hashval h)
 	    | Some(_) -> raise (Failure "two nonces where at most one is expected"))
+      (* Process the publisher *)
       else if l = "Publisher" then
 	pr l
 	  (fun () ->
@@ -446,6 +467,7 @@ let input_signaspec ch th sgt =
 	    match !gamma with
 	    | None -> gamma := Some(pfgaddrstr_addr h)
 	    | Some(_) -> raise (Failure "two publishers where at most one is expected"))
+      (* Process an included signature *)
       else if l = "Include" then
 	pr l
 	  (fun () ->
@@ -457,12 +479,15 @@ let input_signaspec ch th sgt =
 	    let rtokl2 = input_token_rev_list ch in
 	    assoc_signa objhrev prophrev sgt sdone paramh trmh proph sg (List.rev rtokl1) (List.rev rtokl2);
 	    signaspec := Logic.Signasigna(h)::!signaspec)
+      (* Process a base type declaration *)
       else if l = "Base" then
 	pr l
 	  (fun () ->
 	    let nm = input_token ch in
 	    Hashtbl.add baseh nm !basec;
 	    incr basec)
+      (* Process a let binding (not part of the signature, but used to ease
+         writing terms) *)
       else if l = "Let" then (** not part of the signature, but just to ease writing terms **)
 	pr l
 	  (fun () ->
@@ -472,6 +497,7 @@ let input_signaspec ch th sgt =
 	    if not (input_token ch = ":=") then raise (Failure "bad format for term of Let");
 	    let m = input_trm baseh trmh ch [] [] in
 	    Hashtbl.add trmh nm (a,m))
+      (* Process a parameter declaration *)
       else if l = "Param" then
 	pr l
 	  (fun () ->
@@ -484,6 +510,7 @@ let input_signaspec ch th sgt =
 	    Hashtbl.add paramh nm (a,h);
 	    Hashtbl.add objhrev h nm;
 	    signaspec := Logic.Signaparam(h,a)::!signaspec)
+      (* Process a definition *)
       else if l = "Def" then
 	pr l
 	  (fun () ->
@@ -499,6 +526,7 @@ let input_signaspec ch th sgt =
 		Hashtbl.add objhrev h nm;
 		signaspec := Logic.Signadef(a,m)::!signaspec
 	    | None -> raise (Failure (Printf.sprintf "trouble normalizing Def %s" nm)))
+      (* Process a known proposition *)
       else if l = "Known" then
 	pr l
 	  (fun () ->
@@ -512,15 +540,20 @@ let input_signaspec ch th sgt =
 		Hashtbl.add prophrev h nm;
 		signaspec := Logic.Signaknown(m)::!signaspec
 	    | None -> raise (Failure (Printf.sprintf "trouble normalizing Axiom %s" nm)))
+      (* Unknown signature specification item *)
       else
 	raise (Failure (Printf.sprintf "Unknown signature spec item %s" l))
     done;
+    (* Return the signature specification, nonce, publisher, and hash tables *)
     (!signaspec,!nonce,!gamma,paramh,objhrev,proph,prophrev)
   with
   | End_of_file -> close_in_noerr ch; (!signaspec,!nonce,!gamma,paramh,objhrev,proph,prophrev)
   | e -> close_in_noerr ch; raise e;;
 
+(* Function to read a document from an input channel *)
 let input_doc ch th sgt =
+  (* Similar structure to input_signaspec, but with different processing for
+     document-specific items such as NewOwner, NewRights, and Bounty *)
   let basec = ref 0 in
   let baseh : (string,int) Hashtbl.t = Hashtbl.create 10 in
   let sdone : (hashval,unit) Hashtbl.t = Hashtbl.create 100 in
@@ -814,6 +847,7 @@ let input_doc ch th sgt =
   | End_of_file -> close_in_noerr ch; (!doc,!nonce,!gamma,paramh,objhrev,proph,prophrev,conjh,objownsh,objrightsh,propownsh,proprightsh,bountyh)
   | e -> close_in_noerr ch; raise e;;
 
+(* Recursively output a string representation of a type *)
 let rec output_stp a bh =
   match a with
   | TpArr(a,b) ->
@@ -821,6 +855,7 @@ let rec output_stp a bh =
   | Prop -> "Prop"
   | Base(i) -> try Hashtbl.find bh i with _ -> "?"
 
+(* Recursively output a string representation of a term *)
 let rec output_trm m bh trmh leth vl =
   try
     Hashtbl.find leth m
@@ -845,6 +880,7 @@ let rec output_trm m bh trmh leth vl =
         | Eq(a,m1,m2) ->
            Printf.sprintf "Eq %s %s %s" (output_stp a bh) (output_trm m1 bh trmh leth vl) (output_trm m2 bh trmh leth vl)
        
+(* Recursively output a string representation of a proof *)
 let rec output_pf d bh trmh leth knh vl hypl =
   match d with
   | Hyp(i) -> (try List.nth hypl i with _ -> "?")
@@ -868,7 +904,8 @@ let rec output_pf d bh trmh leth knh vl hypl =
        (output_stp a1 bh)
        (output_pf d2 bh trmh leth knh (x::vl) hypl)
   | Ext(a,b) -> Printf.sprintf "Ext %s %s" (output_stp a bh) (output_stp b bh)
-     
+
+(* Recursively output let bindings for primitive recursive functions used in a term *)
 let rec decl_let_hfprims c bh leth m =
   match m with
   | Prim(i) ->
