@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2024 The Proofgold Lava developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015 The Qeditas developers *)
 (* Copyright (c) 2017-2019 The Dalilcoin developers *)
@@ -15,13 +15,13 @@ open Sha256
 open Hash
 open Secp256k1
 
+(* Define the maximum value for a 256-bit integer *)
 let two256minus1 = big_int_of_string "115792089237316195423570985008687907853269984665640564039457584007913129639935"
 
-(* base58 representation *)
+(* Base58 representation *)
 let _base58strs = ["1";"2";"3";"4";"5";"6";"7";"8";"9";"A";"B";"C";"D";"E";"F";"G";"H";"J";"K";"L";"M";"N";"P";"Q";"R";"S";"T";"U";"V";"W";"X";"Y";"Z";"a";"b";"c";"d";"e";"f";"g";"h";"i";"j";"k";"m";"n";"o";"p";"q";"r";"s";"t";"u";"v";"w";"x";"y";"z"]
 
-(* c : big_int *)
-(* return base58 string representation of c *)
+(* Convert a big_int to a base58 string *)
 let rec base58_rec c r =
   if gt_big_int c zero_big_int then
     let (q,m) = quomod_big_int c (big_int_of_string "58") in
@@ -31,6 +31,7 @@ let rec base58_rec c r =
 
 let base58 c = base58_rec c ""
 
+(* Convert a base58 character to an integer *)
 let base58char_int c =
    match c with
    | '1' -> 0
@@ -95,6 +96,7 @@ let base58char_int c =
 
 (* s : base58 string *)
 (* return int representation of s *)
+(* Convert a base58 string to a big_int *)
 let rec frombase58_rec s i sl r =
   if i < sl then
     frombase58_rec s (i + 1) sl (add_int_big_int (base58char_int (String.get s i)) (mult_int_big_int 58 r))
@@ -117,6 +119,7 @@ let pfgwif k compr =
   let (sh20,_,_,_,_,_,_,_) = Be256.to_int32p8 (sha256dstr (Buffer.contents s)) in
   base58 (or_big_int (shift_left_big_int (or_big_int k (shift_left_big_int (big_int_of_int pre) 256)) 32) (int32_big_int_bits sh20 0))
 
+(* WIFs for litecoin private keys use a different prefix byte depending on the network (testnet or mainnet) *)
 let ltcwif k compr =
   let pre = if !Config.testnet then 0xef else 0xb0 in
   let k1 = 
@@ -135,6 +138,7 @@ let ltcwif k compr =
 (* w : Proofgold wif base58 string *)
 (* return private key, big_int and a bool indicating if it's for the compressed pubkey *)
 (* Note: This doesn't check the checksum. *)
+(* Convert a proofgold WIF string to a private key and a boolean indicating if it's for a compressed public key *)
 let privkey_from_wif w =
   let k =
     and_big_int (shift_right_towards_zero_big_int (frombase58 w) 32) two256minus1
@@ -150,6 +154,7 @@ let privkey_from_wif w =
 (* w : Bitcoin wif base58 string *)
 (* return private key, big_int and a bool indicating if it's for the compressed pubkey *)
 (* Note: This doesn't check the checksum. *)
+(* Convert a bitcoin WIF string to a private key and a boolean indicating if it's for a compressed public key *)
 let privkey_from_btcwif w =
   if String.length w > 1 && w.[0] = '5' then
     let k =
@@ -164,6 +169,7 @@ let privkey_from_btcwif w =
 
 (* Computation of base 58 address strings *)
 
+(* Count the number of leading zero bytes in an int32 tuple *)
 let count_int32_bytes x =
   if x < 0l then
     0
@@ -179,6 +185,7 @@ let count_int32_bytes x =
     0
 
 (* Helper function to count the leading 0 bytes. btcaddr uses this. *)
+(* Count the number of leading zero bytes in a 25-byte big-endian integer *)
 let count0bytes (x0,x1,x2,x3,x4) =
   if x0 = 0l then
     if x1 = 0l then
@@ -197,6 +204,7 @@ let count0bytes (x0,x1,x2,x3,x4) =
   else
     count_int32_bytes x0
 
+(* Convert a public key to a hexadecimal string *)
 let pubkey_hexstring (x,y) compr =
   if compr then
     if evenp y then
@@ -206,6 +214,7 @@ let pubkey_hexstring (x,y) compr =
   else
     Printf.sprintf "04%s%s" (hexstring_of_big_int x 64) (hexstring_of_big_int y 64)
 
+(* Convert a public key to a byte list *)
 let pubkey_bytelist (x,y) compr =
   if compr then
     if evenp y then
@@ -215,6 +224,7 @@ let pubkey_bytelist (x,y) compr =
   else
     (4::be256_bytelist (big_int_be256 x) @ be256_bytelist (big_int_be256 y))
 
+(* Convert a hexadecimal string to a public key *)
 let hexstring_pubkey s =
   if String.length s = 66 then
     if s.[0] = '0' then
@@ -236,19 +246,23 @@ let hexstring_pubkey s =
   else
     raise (Failure (Printf.sprintf "cannot decode %s as pubkey" s))
 
+(* Compute the hash of a public key *)
 let pubkey_hashval (x,y) compr =
   if compr then
     hashpubkeyc (if evenp y then 2 else 3) (big_int_hashval x)
   else
     hashpubkey (big_int_hashval x) (big_int_hashval y)
 
+(* Convert a public key hash to a 20-byte big-endian integer *)
 let pubkey_be160 (x,y) compr =
   hashval_be160 (pubkey_hashval (x,y) compr)
 
+(* Convert a base58 address string to a 20-byte big-endian integer *)
 let be160_from_addrstr b =
   let (_,_,x0,x1,x2,x3,x4,_) = Be256.to_int32p8 (big_int_hashval (frombase58 b)) in
   Be160.of_int32p5 (x0,x1,x2,x3,x4)
 
+(* Compute the checksum of a base58 address string *)
 let calc_checksum pre rm1 =
   let s = Buffer.create 21 in
   Buffer.add_char s (Char.chr (pre mod 256));
@@ -256,6 +270,7 @@ let calc_checksum pre rm1 =
   let (sh30,_,_,_,_,_,_,_) = Be256.to_int32p8 (sha256dstr (Buffer.contents s)) in
   sh30
 
+(* Convert a proofgold base58 address string to a 20-byte big-endian integer and a prefix byte *)
 let pfgaddrstr_addr b =
   let (_,p,x0,x1,x2,x3,x4,cksm) = hashval_int32p8 (big_int_hashval (frombase58 b)) in
   if p < 0l || p > 8000l then raise (Failure "Not a valid Proofgold address (bad prefix)");
@@ -280,6 +295,7 @@ let pfgaddrstr_addr b =
   else
     raise (Failure "Not a Proofgold address")
 
+(* Convert a bitcoin base58 address string to a 20-byte big-endian integer and a prefix byte *)
 let btcaddrstr_addr b =
   let (_,p,x0,x1,x2,x3,x4,cksm) = hashval_int32p8 (big_int_hashval (frombase58 b)) in
   let xs = Be160.of_int32p5 (x0,x1,x2,x3,x4) in
@@ -291,6 +307,7 @@ let btcaddrstr_addr b =
   else
     raise (Failure "Not a Bitcoin address")
 
+(* Convert a 20-byte big-endian integer to a bitcoin base58 address string *)
 let be160_btcaddrstr rm1 =
   let (rm10,rm11,rm12,rm13,rm14) = (Be160.to_int32p5 rm1) in
   let c0 = count0bytes (rm10,rm11,rm12,rm13,rm14) in
@@ -301,12 +318,14 @@ let be160_btcaddrstr rm1 =
   let a = int32p8_big_int (0l,0l,rm10,rm11,rm12,rm13,rm14,sh30) in
   ((String.make (c0+1) '1') ^ (base58 a))
 
+(* Convert a prefix byte and a 20-byte big-endian integer to a base58 address string *)
 let hashval_gen_addrstr pre rm1 =
   let sh30 = calc_checksum pre rm1 in
   let (rm10,rm11,rm12,rm13,rm14) = Be160.to_int32p5 rm1 in
   let a = int32p8_big_int (0l,Int32.of_int pre,rm10,rm11,rm12,rm13,rm14,sh30) in
   base58 a
 
+(* Convert a proofgold address (prefix byte and 20-byte big-endian integer) to a base58 address string *)
 let addr_pfgaddrstr alpha =
   let (p,xs) = alpha in
   let pre =
@@ -317,6 +336,7 @@ let addr_pfgaddrstr alpha =
   in
   hashval_gen_addrstr pre xs
 
+(* Converts atoms to bars representation *)
 let bars_of_atoms v =
   let w = Int64.div v 100000000000L in
   let d = Int64.to_string (Int64.rem v 100000000000L) in
@@ -341,13 +361,14 @@ let bars_of_atoms v =
   for i = 0 to dl - (1 + !ez) do
     Buffer.add_char b d.[i]
   done;
-  Buffer.contents b
+  Buffer.contents b (* return the string representation of the number in bars format *)
 
+(* Converts bars representation to atoms *)
 let atoms_of_bars s =
-  let f = ref 0L in
-  let w = ref true in
-  let c = ref 0L in
-  let d = ref 10000000000L in
+  let f = ref 0L in (* whole part of the number *)
+  let w = ref true in (* flag to indicate if we are processing the whole part *)
+  let c = ref 0L in (* decimal part of the number *)
+  let d = ref 10000000000L in (* divisor for the decimal part *)
   let n = String.length s in
   let i = ref 0 in
   while !i < n do
@@ -369,8 +390,9 @@ let atoms_of_bars s =
       else
 	raise (Failure ("cannot interpret " ^ s ^ " as a number of bars"))
   done;
-  Int64.add (Int64.mul !f 100000000000L) !c
+  Int64.add (Int64.mul !f 100000000000L) !c (* return the number in atoms format *)
 
+(* Converts litoshis to LTC *)
 let ltc_of_litoshis v =
   let w = Int64.div v 100000000L in
   let d = Int64.to_string (Int64.rem v 100000000L) in
@@ -397,6 +419,7 @@ let ltc_of_litoshis v =
   done;
   Buffer.contents b
 
+(* Converts LTC to litoshis *)
 let litoshis_of_ltc s =
   let f = ref 0L in
   let w = ref true in
@@ -425,6 +448,7 @@ let litoshis_of_ltc s =
   done;
   Int64.add (Int64.mul !f 100000000L) !c
 
+(* Converts a JSON string to an address *)
 let addr_from_json j =
   match j with
   | JsonStr(a) ->
@@ -434,6 +458,7 @@ let addr_from_json j =
 	pfgaddrstr_addr a
   | _ -> raise (Failure("not an address"))
 
+(* Converts a JSON string to a pay address *)
 let payaddr_from_json j =
   let (i,xs) = addr_from_json j in
   if i = 0 || i = 1 then
@@ -441,6 +466,7 @@ let payaddr_from_json j =
   else
     raise (Failure("not a pay address"))
 
+(* Converts a JSON string to atoms *)
 let atoms_from_json j =
   match j with
   | JsonNum(x) -> Int64.of_string x
@@ -460,17 +486,21 @@ let atoms_from_json j =
       end
   | _ -> raise Not_found
 
+(* Converts a JSON string to bars *)
 let bars_from_json j =
   bars_of_atoms (atoms_from_json j)
 
+(* Converts atoms to a JSON object *)
 let json_atoms x =
   JsonObj([("atoms",JsonNum(Int64.to_string x));("bars",JsonStr(bars_of_atoms x))])
 
+(* Converts bars to a JSON object *)
 let json_bars x =
   json_atoms (atoms_of_bars x)
 
 exception InvalidBech32
 
+(* Converts a bech32 character to an integer *)
 let bech32char_int c =
   match c with
   | 'q' -> 0
@@ -507,6 +537,7 @@ let bech32char_int c =
   | 'l' -> 31
   | _ -> raise InvalidBech32
 
+(* Converts a bech32 string to a be160 value *)
 let bech32_be160 x i =
   let o2 x y = Int32.logor x y in
   let o4 x y z w = o2 (o2 x y) (o2 z w) in
@@ -526,6 +557,7 @@ let bech32_be160 x i =
   let x4 = o7 (r 6 3) (l 5 2) (l 4 7) (l 3 12) (l 2 17) (l 1 22) (l 0 27) in
   Be160.of_int32p5 (x4,x3,x2,x1,x0)
 
+(* Converts a litecoin bech32 string to a be160 value *)
 let ltcbech32_be160 x =
   let l = String.length x in
   if l = 43 && String.sub x 0 5 = "ltc1q" then
