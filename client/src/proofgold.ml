@@ -139,7 +139,7 @@ let ltc_init sout =
     !exitfn 2
 
 let ltc_listener () =
-  log_string (Printf.sprintf "ltc_listener thread %d begin %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+  log_string (Printf.sprintf "ltc_listener begin %f\n" (Unix.gettimeofday()));
   let lastensuresync = ref (Unix.time()) in
   let maybe_ensure_sync () =
     let nw = Unix.time() in
@@ -151,7 +151,7 @@ let ltc_listener () =
   in
   while true do
     try
-      (*      log_string (Printf.sprintf "ltc_listener thread %d loop %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday())); *)
+      (*      log_string (Printf.sprintf "ltc_listener loop %f\n"  (Unix.gettimeofday())); *)
       if !ltc_listener_paused then raise Exit;
       let lbh = ltc_getbestblockhash () in
       ltc_process_block lbh;
@@ -197,7 +197,7 @@ let ltc_listener () =
        Printf.printf "Out of memory. Trying to exit gracefully.\n";
        !exitfn 9
     | exn ->
-      log_string (Printf.sprintf "ltc_listener thread %d exception %s\n" (Thread.id (Thread.self())) (Printexc.to_string exn));
+      log_string (Printf.sprintf "ltc_listener exception %s\n" (Printexc.to_string exn));
       Thread.delay 120.0
   done;;
 
@@ -254,7 +254,7 @@ let consolidate_spendable oc blkh lr amt esttxsize gathered gatheredkeys gathere
   with Exit -> ();;
 
 let swappingthread () =
-  log_string (Printf.sprintf "swapping thread %d begin %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+  log_string (Printf.sprintf "swapping begin %f\n" (Unix.gettimeofday()));
   let change = ref false in
   while true do
     try
@@ -548,7 +548,7 @@ let swappingthread () =
            !swapbuyoffers;
          Thread.delay 30.0
     with exn ->
-      log_string (Printf.sprintf "swapping thread %d exception %s\n" (Thread.id (Thread.self())) (Printexc.to_string exn));
+      log_string (Printf.sprintf "swapping exception %s\n" (Printexc.to_string exn));
       Thread.delay 300.0
   done;;
 
@@ -735,6 +735,90 @@ let local_lookup_prop_thy_owner lr remgvknth pidthy alphathy =
     | None -> raise Not_found
     | Some(beta,r) -> (beta,r);;
 
+let prop_names_jsonl k propid =
+  let propnml = Hashtbl.find_all mglegendp propid in
+  if propnml = [] then
+    []
+  else
+    [(k,JsonArr(List.map (fun x -> JsonStr(x)) propnml))];;
+
+let nprop_active_p npropid npropaddr =
+  let (pidht,npidht) =
+    if !term_info_refreshing then
+      (owns_prop_info_bkp,owns_negprop_info_bkp)
+    else
+      (owns_prop_info,owns_negprop_info)
+  in
+  Hashtbl.mem pidht npropid || Hashtbl.mem npidht npropaddr;;
+
+let rec display_subtm_genfun tmabbrevp m loclist loclen0 locnum0 vcx =
+  if loclen0 <= 0 then
+    tmabbrevp m loclist vcx
+  else
+    match m with
+    | Logic.Ap(m1,m2) ->
+       if mod_big_int locnum0 two_big_int = zero_big_int then
+         display_subtm_genfun tmabbrevp m1 (Some(false)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx
+       else
+         display_subtm_genfun tmabbrevp m2 (Some(true)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx
+    | Imp(m1,m2) ->
+       if mod_big_int locnum0 two_big_int = zero_big_int then
+         display_subtm_genfun tmabbrevp m1 (Some(false)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx
+       else
+         display_subtm_genfun tmabbrevp m2 (Some(true)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx
+    | Lam(a,m1) ->
+       let x = Printf.sprintf "x%d" (List.length vcx) in
+       display_subtm_genfun tmabbrevp m1 (None::loclist) (loclen0-1) locnum0 (x::vcx)
+    | All(a,m1) ->
+       let x = Printf.sprintf "x%d" (List.length vcx) in
+       display_subtm_genfun tmabbrevp m1 (None::loclist) (loclen0-1) locnum0 (x::vcx)
+    | Ex(a,m1) ->
+       let x = Printf.sprintf "x%d" (List.length vcx) in
+       display_subtm_genfun tmabbrevp m1 (None::loclist) (loclen0-1) locnum0 (x::vcx)
+    | Eq(a,m1,m2) ->
+       if mod_big_int locnum0 two_big_int = zero_big_int then
+         display_subtm_genfun tmabbrevp m1 (Some(false)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx
+       else
+         display_subtm_genfun tmabbrevp m2 (Some(true)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx
+    | _ -> raise (Failure "no such subproof location");;
+
+let rec display_subpf_genfun pfabbrevp tmabbrevp d loclist loclen0 locnum0 vcx xy hcx hl =
+  if loclen0 <= 0 then
+    pfabbrevp d loclist vcx hcx
+  else
+    match d with
+    | Logic.PrAp(d1,d2) ->
+       if mod_big_int locnum0 two_big_int = zero_big_int then
+         display_subpf_genfun pfabbrevp tmabbrevp d1 (Some(false)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx xy hcx (hl+1)
+       else
+         display_subpf_genfun pfabbrevp tmabbrevp d2 (Some(true)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx 0 hcx 0
+    | TmAp(d1,m2) ->
+       if mod_big_int locnum0 two_big_int = zero_big_int then
+         display_subpf_genfun pfabbrevp tmabbrevp d1 (Some(false)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx (xy+1) hcx hl
+       else
+         display_subtm_genfun tmabbrevp m2 (Some(true)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx
+    | PrLa(m1,d2) ->
+       if hl > 0 then
+         let h = Printf.sprintf "L%d" (List.length hcx) in
+         if mod_big_int locnum0 two_big_int = zero_big_int then
+           display_subtm_genfun tmabbrevp m1 (Some(false)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx
+         else
+           display_subpf_genfun pfabbrevp tmabbrevp d2 (Some(true)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx xy (h::hcx) (hl-1)
+       else
+         let h = Printf.sprintf "H%d" (List.length hcx) in
+         if mod_big_int locnum0 two_big_int = zero_big_int then
+           display_subtm_genfun tmabbrevp m1 (Some(false)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx
+         else
+           display_subpf_genfun pfabbrevp tmabbrevp d2 (Some(true)::loclist) (loclen0-1) (shift_right_towards_zero_big_int locnum0 1) vcx xy (h::hcx) 0
+    | TmLa(a,d2) ->
+       if xy > 0 then
+         let x = Printf.sprintf "y%d" (List.length vcx) in
+         display_subpf_genfun pfabbrevp tmabbrevp d2 (None::loclist) (loclen0-1) locnum0 (x::vcx) (xy-1) hcx hl
+       else
+         let x = Printf.sprintf "x%d" (List.length vcx) in
+         display_subpf_genfun pfabbrevp tmabbrevp d2 (None::loclist) (loclen0-1) locnum0 (x::vcx) 0 hcx hl
+    | _ -> raise (Failure "no such subproof location");;
+
 let ac c h longhelp f =
   sortedcommands := List.merge compare [c] !sortedcommands;
   Hashtbl.add commandh c (h,longhelp,(fun oc al -> try f oc al with BadCommandForm -> Printf.fprintf oc "%s\n" h));;
@@ -857,6 +941,10 @@ let load_mglegend fn =
               let h = hexstring_hashval (String.sub l 2 64) in
               let nm = String.sub l 67 (ll - 67) in
               Hashtbl.add mglegendp h nm
+            else if l.[0] = 'T' && l.[1] = ' ' then
+              let h = hexstring_hashval (String.sub l 2 64) in
+              let nm = String.sub l 67 (ll - 67) in
+              Hashtbl.add mglegendt h nm
             else if String.sub l 0 4 = "ITE " && ll = 68 then
               let h = hexstring_hashval (String.sub l 4 64) in
               Hashtbl.add mgifthenelse h ()
@@ -909,6 +997,32 @@ let rec find_marker_in_hlist hl =
 let find_marker_at_address tr beta =
   let hl = ctree_lookup_addr_assets true true tr (0,beta) in
   find_marker_in_hlist hl
+
+let resend_txpool oc =
+  let best = get_bestblock_print_warnings oc in
+  match best with
+  | None -> Printf.fprintf oc "Cannot determine best block\n"
+  | Some(dbh,lbk,ltx) ->
+     let (_,_,_,_,_,_,blkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
+     let (_,tm,lr,tr,sr) = Db_validheadervals.dbget (hashpair lbk ltx) in
+     let tmp = ref [] in
+     let txinv = ref [] in
+     let cnt = ref 0 in
+     Hashtbl.iter
+       (fun k stau -> tmp := (k,stau)::!tmp)
+       stxpool;
+     List.iter
+       (fun (k,stau) ->
+         try
+           let sz = stxsize stau in
+           Commands.validatetx2 oc (Int64.add 1L blkh) tm tr sr lr sz stau;
+           if !cnt < 65536 then
+             (txinv := (int_of_msgtype STx,k)::!txinv; incr cnt)
+         with exn ->
+           Printf.fprintf oc "Removing %s\n" (hashval_hexstring k);
+               Hashtbl.remove stxpool k)
+           !tmp;
+         broadcast_inv !txinv
 
 let initialize_commands () =
   ac "version" "version" "Print client description and version number"
@@ -3072,10 +3186,10 @@ let initialize_commands () =
 	      (fun (alpha,a1,a2) ->
 		match (a1,a2) with
 		| ((aid1,_,_,Bounty(v)),(aid2,_,obl2,pre2)) ->
-		    vtot := Int64.add !vtot v;
-		    txinl := (alpha,aid1)::!txinl;
 		    if (!cnt < 50) && not (List.exists (fun (_,aid2b) -> aid2b = aid2) !txinl) then
 		      begin
+		        vtot := Int64.add !vtot v;
+		        txinl := (alpha,aid1)::!txinl;
 			txinl := (alpha,aid2)::!txinl;
 			txoutl := (alpha,(obl2,pre2))::!txoutl;
                         incr cnt
@@ -3130,6 +3244,13 @@ let initialize_commands () =
 	      close_out_noerr f
 	    with exn -> close_out_noerr f; raise exn
 	  end
+      | _ -> raise BadCommandForm);
+  ac "printmaxconns" "printmaxconns" "printmaxconns"
+    (fun oc _ -> Printf.fprintf oc "maxconns %d\n" !Config.maxconns);
+  ac "setmaxconns" "setmaxconns <int>" "setmaxconns set maxconns"
+    (fun oc al ->
+      match al with
+      | [i] -> Config.maxconns := int_of_string i;
       | _ -> raise BadCommandForm);
   ac "setbestblock" "setbestblock <blockid> [<blockheight> <ltcblockid> <ltcburntx>]" "Manually set the current best block. This is mostly useful if -ltcoffline is being used."
     (fun oc al ->
@@ -3360,7 +3481,7 @@ let initialize_commands () =
         | [h] -> (hexstring_hashval h,10)
         | (_::_) -> raise BadCommandForm
         | [] ->
-           match get_bestblock_print_warnings oc with
+           match get_bestblock_or_previous () with
            | None -> raise (Failure "No blocks yet?")
            | Some(h,_,_) -> (h,10)
       in
@@ -3373,12 +3494,51 @@ let initialize_commands () =
         | [h] -> (hexstring_hashval h,10)
         | (_::_) -> raise BadCommandForm
         | [] ->
-           match get_bestblock_print_warnings oc with
+           match get_bestblock_or_previous () with
            | None -> raise (Failure "No blocks yet?")
            | Some(h,_,_) -> (h,10)
       in
       Commands.report_recentdocs oc blkid n);
   ac "recentthms" "recentthms [<blockid> <num>]" "Report txs with docs proving at least one thm included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recentthms with it to get more."
+    (fun oc al ->
+      let (blkid,n) =
+        match al with
+        | [h;ns] -> (hexstring_hashval h,int_of_string ns)
+        | [h] -> (hexstring_hashval h,10)
+        | (_::_) -> raise BadCommandForm
+        | [] ->
+           match get_bestblock_or_previous () with
+           | None -> raise (Failure "No blocks yet?")
+           | Some(h,_,_) -> (h,10)
+      in
+      Commands.report_recentthms oc blkid n);
+  ac "recenttxstext" "recenttxstext [<blockid> <num>]" "Report txs included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recenttxs with it to get more."
+    (fun oc al ->
+      let (blkid,n) =
+        match al with
+        | [h;ns] -> (hexstring_hashval h,int_of_string ns)
+        | [h] -> (hexstring_hashval h,10)
+        | (_::_) -> raise BadCommandForm
+        | [] ->
+           match get_bestblock_print_warnings oc with
+           | None -> raise (Failure "No blocks yet?")
+           | Some(h,_,_) -> (h,10)
+      in
+      Commands.report_recenttxs oc blkid n);
+  ac "recentdocstext" "recentdocstext [<blockid> <num>]" "Report txs publishing docs included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recentdocs with it to get more."
+    (fun oc al ->
+      let (blkid,n) =
+        match al with
+        | [h;ns] -> (hexstring_hashval h,int_of_string ns)
+        | [h] -> (hexstring_hashval h,10)
+        | (_::_) -> raise BadCommandForm
+        | [] ->
+           match get_bestblock_print_warnings oc with
+           | None -> raise (Failure "No blocks yet?")
+           | Some(h,_,_) -> (h,10)
+      in
+      Commands.report_recentdocs oc blkid n);
+  ac "recentthmstext" "recentthmstext [<blockid> <num>]" "Report txs with docs proving at least one thm included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recentthms with it to get more."
     (fun oc al ->
       let (blkid,n) =
         match al with
@@ -3448,150 +3608,6 @@ let initialize_commands () =
               | Some(h,_,_) -> (h,10)
          in
          Commands.report_recentpropid_proven oc pid blkid n);
-  ac "recentbountiesplaced" "recentbountiesplaced [<blockid> <num>]" "Report txs placing bounties included in blocks up to (and including)\nthe given block (defaults to current best block).\nAfter enough txs (soft bound of <num>, default 10) are reported, the block before the last block\n considered is reported so the user can call recentbountiesplaced with it to get more."
-    (fun oc al ->
-      let (blkid,n) =
-        match al with
-        | [h;ns] -> (hexstring_hashval h,int_of_string ns)
-        | [h] -> (hexstring_hashval h,10)
-        | (_::_) -> raise BadCommandForm
-        | [] ->
-           match get_bestblock_print_warnings oc with
-           | None -> raise (Failure "No blocks yet?")
-           | Some(h,_,_) -> (h,10)
-      in
-      Commands.report_recentbountiesplaced oc blkid n);
-  ac "mgdoc" "mgdoc <pubaddr|blockid|txid> <mgoutfile> [<num>]" "Create an approximate Megalodon version of the nth document published at the address or in the block or tx.\n"
-    (fun oc al ->
-      match al with
-      | [hh;fn] ->
-         if String.length hh > 60 then (** hashval, not address **)
-           begin
-             let n = 1 in
-             let cnt = ref 0 in
-             let h = hexstring_hashval hh in
-             try
-               let bd = DbBlockDelta.dbget h in
-               List.iter
-                 (fun ((_,tauout),_) ->
-                   List.iter
-                     (fun (_,(_,u)) ->
-                       match u with
-                       | DocPublication(_,_,th,dl) ->
-                          incr cnt;
-                          if !cnt = n then
-                            begin
-                              let f = open_out fn in
-                              mgdoc_out f th dl;
-                              close_out f
-                            end
-                       | _ -> ())
-                     tauout)
-                 bd.blockdelta_stxl
-             with Not_found ->
-               try
-                 let ((_,tauout),_) = DbSTx.dbget h in
-                 List.iter
-                   (fun (_,(_,u)) ->
-                     match u with
-                     | DocPublication(_,_,th,dl) ->
-                        incr cnt;
-                        if !cnt = n then
-                          begin
-                            let f = open_out fn in
-                            mgdoc_out f th dl;
-                            close_out f
-                          end
-                     | _ -> ())
-                   tauout
-               with Not_found ->
-                 Printf.fprintf oc "Do not know %s\n" hh
-           end
-         else
-           begin
-             let alpha = pfgaddrstr_addr hh in
-             if not (pubaddr_p alpha) then raise (Failure "not a pubaddr");
-             let lr = get_ledgerroot (get_bestblock_print_warnings oc) in
-             let hl = ctree_lookup_addr_assets true true (CHash(lr)) (0,alpha) in
-             match hl with
-             | HCons(a,_) ->
-                begin
-                  match a with
-                  | (_,_,_,DocPublication(_,_,th,dl)) ->
-                     let f = open_out fn in
-                     mgdoc_out f th dl;
-                     close_out f
-                  | _ ->
-                     raise (Failure "something other than a document at address")
-                end
-             | HConsH(ah,_) ->
-                begin
-                  let a = DbAsset.dbget ah in
-                  match a with
-                  | (_,_,_,DocPublication(_,_,th,dl)) ->
-                     let f = open_out fn in
-                     mgdoc_out f th dl;
-                     close_out f
-                  | _ ->
-                     raise (Failure "something other than a document at address")
-                end
-             | HNil -> raise (Failure "no document at address")
-             | HHash(hlh,_) ->
-                begin
-                  let (ah,_) = DbHConsElt.dbget hlh in
-                  let a = DbAsset.dbget ah in
-                  match a with
-                  | (_,_,_,DocPublication(_,_,th,dl)) ->
-                     let f = open_out fn in
-                     mgdoc_out f th dl;
-                     close_out f
-                  | _ ->
-                     raise (Failure "something other than a document at address")
-                end
-           end
-      | [hh;fn;n] ->
-         begin
-           let n = int_of_string n in
-           let cnt = ref 0 in
-           let h = hexstring_hashval hh in
-           try
-             let bd = DbBlockDelta.dbget h in
-             List.iter
-               (fun ((_,tauout),_) ->
-                 List.iter
-                   (fun (_,(_,u)) ->
-                     match u with
-                     | DocPublication(_,_,th,dl) ->
-                        incr cnt;
-                        if !cnt = n then
-                          begin
-                            let f = open_out fn in
-                            mgdoc_out f th dl;
-                            close_out f
-                          end
-                     | _ -> ())
-                   tauout)
-               bd.blockdelta_stxl
-           with Not_found ->
-             try
-               let ((_,tauout),_) = DbSTx.dbget h in
-               List.iter
-                 (fun (_,(_,u)) ->
-                   match u with
-                   | DocPublication(_,_,th,dl) ->
-                      incr cnt;
-                      if !cnt = n then
-                        begin
-                          let f = open_out fn in
-                          mgdoc_out f th dl;
-                          close_out f
-                        end
-                   | _ -> ())
-                 tauout
-             with Not_found ->
-               Printf.fprintf oc "Do not know %s\n" hh
-         end
-      | _ -> raise BadCommandForm);
   ac "querytermroot" "querytermroot <hashval>" "Return info given a term root"
     (fun oc al ->
       match al with
@@ -3603,11 +3619,11 @@ let initialize_commands () =
              let m = Hashtbl.find term_info_hf h in
              match m with
              | Prim(i) -> Printf.fprintf oc "Primitive %d (%s) in built-in HF theory.\n" i (hfprimnamesa.(i))
-             | _ -> Printf.fprintf oc "Term %s in built-in HF theory.\n" (mg_nice_trm (Some(Checking.hfthyid)) m)
+             | _ -> Printf.fprintf oc "Term %s in built-in HF theory.\n" (mghtml_nice_trm (Some(Checking.hfthyid)) m)
            with Not_found -> ()
          end;
          List.iter
-           (fun (m,aid,thyh,pfgbh,otx) ->
+           (fun (m,aid,thyh,pfgbh,otx,isprop,objorpropid) ->
              if not !printedterm then
                begin
                  Printf.fprintf oc "Term root of underlying term:\n";
@@ -3626,7 +3642,11 @@ let initialize_commands () =
                | Some(txid) -> Printf.sprintf "tx %s" (hashval_hexstring txid)
                | None -> "coinstake tx"
              in
-             Printf.fprintf oc "Published in %s by asset with id %s in block %s by %s\n" thystr (hashval_hexstring aid) (hashval_hexstring pfgbh) txstr)
+             Printf.fprintf oc "Published in %s by asset with id %s in block %s by %s\n" thystr (hashval_hexstring aid) (hashval_hexstring pfgbh) txstr;
+             if isprop then
+               Printf.fprintf oc "Corresponding proposition %s\n" (hashval_hexstring objorpropid)
+             else
+               Printf.fprintf oc "Corresponding proposition %s\n" (hashval_hexstring objorpropid))
            (Hashtbl.find_all term_info h)
       | _ -> raise BadCommandForm);
   ac "queryobjid" "queryobjid <hashval>" "Return info given a obj id"
@@ -3636,27 +3656,43 @@ let initialize_commands () =
          begin
            let h = hexstring_hashval hh in
            try
-             let (thyh,a,tmroot,prim) = Hashtbl.find obj_info h in
-             let thystr =
-               match thyh with
-               | Some(h) -> Printf.sprintf "theory %s" (hashval_hexstring h)
-               | None -> "the empty theory"
-             in
-             if prim then
-               Printf.fprintf oc "Primitive object in %s with type:\n" thystr
-             else
-               Printf.fprintf oc "Defined object in %s with type:\n" thystr;
-             let j = json_stp a in
-             print_jsonval oc j;
-             Printf.fprintf oc "\n";
-             Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
+            let (thyh,a,tmroot,m,prim,alpha) = Hashtbl.find (if !term_info_refreshing then obj_info_bkp else obj_info) h in
+            let creatorobj =
+              try
+                let (aid,bday,beta) = Hashtbl.find created_obj_info h in
+                [("creatorasobj",JsonObj([("creatoraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let ownerobj =
+              try
+                let (aid,bday,beta,gamma,r) = Hashtbl.find owns_obj_info h in
+                [("ownerasobj",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+              with Not_found -> []
+            in
+            let thyinfo =
+              match thyh with
+              | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+              | None -> []
+            in
+            let al = thyinfo @ creatorobj @ ownerobj in
+            let al = ("firstpubaddr",JsonStr(addr_pfgaddrstr alpha))::al in
+            let al = ("trmpres",JsonStr(Mathdata.mghtml_nice_trm thyh m))::al in
+            let al = ("stppres",JsonStr(Mathdata.mghtml_nice_stp thyh a))::al in
+            let al = ("termroot",JsonStr(hashval_hexstring tmroot))::al in
+            let al = ("type",JsonStr("obj"))::al in
+            print_jsonval oc (JsonObj(al));
            with Not_found ->
              try
-               let (a,tmroot) = Hashtbl.find obj_info_hf h in
-               Printf.fprintf oc "(Primitive) Object in built-in HF theory.\n";
-               Printf.fprintf oc "Type %s\n" (mg_nice_stp (Some(Checking.hfthyid)) a);
-               Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
-             with Not_found -> Printf.fprintf oc "No obj with this id found.\n"
+               let (a,tmroot,m) = Hashtbl.find obj_info_hf h in
+               let thyinfo = [("theory",JsonStr(hashval_hexstring Mathdata.hfthyroot))] in
+               let al = ("prim",JsonBool(true))::thyinfo in
+               let al = ("termroot",JsonStr(hashval_hexstring tmroot))::al in
+               let al = ("trmpres",JsonStr(Mathdata.mghtml_nice_trm (Some(Mathdata.hfthyroot)) m))::al in
+               let al = ("stppres",JsonStr(Mathdata.mghtml_nice_stp (Some(Mathdata.hfthyroot)) a))::al in
+               let al = ("type",JsonStr("obj"))::al in
+               print_jsonval oc (JsonObj(al));
+             with Not_found ->
+               print_jsonval oc (JsonStr("none"))
          end
       | _ -> raise BadCommandForm);
   ac "querypropid" "querypropid <hashval>" "Return info given a prop id"
@@ -3666,23 +3702,41 @@ let initialize_commands () =
          begin
            let h = hexstring_hashval hh in
            try
-             let (thyh,tmroot,prim) = Hashtbl.find prop_info h in
-             let thystr =
-               match thyh with
-               | Some(h) -> Printf.sprintf "theory %s" (hashval_hexstring h)
-               | None -> "the empty theory"
+             let (thyh,tmroot,m,prim,alpha) = Hashtbl.find prop_info h in
+             let creatorobj =
+               try
+                 let (aid,bday,beta) = Hashtbl.find created_obj_info h in
+                 [("creatorasobj",JsonObj([("creatoraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+               with Not_found -> []
              in
-             if prim then
-               Printf.fprintf oc "Axiom in %s\n" thystr
-             else
-               Printf.fprintf oc "Theorem in %s\n" thystr;
-             Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
+             let ownerobj =
+               try
+                 let (aid,bday,beta,gamma,r) = Hashtbl.find owns_obj_info h in
+                 [("ownerasobj",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
+               with Not_found -> []
+             in
+             let thyinfo =
+               match thyh with
+               | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+               | None -> []
+             in
+             let al = thyinfo @ creatorobj @ ownerobj in
+             let al = ("firstpubaddr",JsonStr(addr_pfgaddrstr alpha))::al in
+             let al = ("trmpres",JsonStr(Mathdata.mghtml_nice_trm thyh m))::al in
+             let al = ("termroot",JsonStr(hashval_hexstring tmroot))::al in
+             let al = ("type",JsonStr("prop"))::al in
+             print_jsonval oc (JsonObj(al));
            with Not_found ->
              try
-               let tmroot = Hashtbl.find prop_info_hf h in
-               Printf.fprintf oc "(Axiom) Prop in built-in HF theory.\n";
-               Printf.fprintf oc "Root of underlying term: %s\n" (hashval_hexstring tmroot)
-             with Not_found -> Printf.fprintf oc "Not a known propid\n"
+               let (tmroot,m) = Hashtbl.find prop_info_hf h in
+               let thyinfo = [("theory",JsonStr(hashval_hexstring Mathdata.hfthyroot))] in
+               let al = ("prim",JsonBool(true))::thyinfo in
+               let al = ("termroot",JsonStr(hashval_hexstring tmroot))::al in
+               let al = ("trmpres",JsonStr(Mathdata.mghtml_nice_trm (Some(Mathdata.hfthyroot)) m))::al in
+               let al = ("type",JsonStr("prop"))::al in
+               print_jsonval oc (JsonObj(al));
+             with Not_found ->
+               print_jsonval oc (JsonStr("none"))
          end
       | _ -> raise BadCommandForm);
   ac "querybounties" "querybounties <n> <m>" "Return info about m bounties after the top n (of all time)"
@@ -3691,14 +3745,243 @@ let initialize_commands () =
       | [n;m] ->
          let n = int_of_string n in
          let m = int_of_string m in
+         let alr = ref [] in
          let bs = if !bounty_sorted_refreshing then !bounty_sorted_bkp else !bounty_sorted in
+         let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
+         let lbs = List.length bs in
+         (*         Printf.fprintf oc "Note: There have been a total of %d bounties in all of history.\n" lbs; *)
+         let rec g l m =
+           if m > 0 then
+             match l with
+             | (_,alpha,aid,v,blk,otx)::r ->
+                let spntj = ("spent",JsonBool(Hashtbl.mem my_spent_table aid)) in
+                let propidjl =
+                  try
+                    let propid = Hashtbl.find term_addr_hashval alpha in
+                    let propnml = prop_names_jsonl "defaultnames" propid in
+                    try
+                      let npropid = Hashtbl.find propid_neg_propid propid in
+                      let npropaddr = hashval_term_addr npropid in
+                      let npropnml = prop_names_jsonl "negdefaultnames" npropid in
+                      if nprop_active_p npropid npropaddr then
+                        [("propid",JsonStr(hashval_hexstring propid));("npropid",JsonStr(hashval_hexstring npropid));("npropaddr",JsonStr(addr_pfgaddrstr npropaddr))] @ propnml @ npropnml
+                      else
+                        [("propid",JsonStr(hashval_hexstring propid))] @ propnml @ npropnml
+                    with Not_found ->
+                      [("propid",JsonStr(hashval_hexstring propid))] @ propnml
+                  with Not_found ->
+                    []
+                in
+                alr := JsonObj([("bountyvalue",JsonNum(Int64.to_string v));("bountyaddress",JsonStr(addr_pfgaddrstr alpha))] @ propidjl @ [spntj])::!alr;
+                g r (m-1)
+             | _ -> ()
+           else
+             ()
+         in
+         let rec f l n m =
+           if n > 0 then
+             match l with
+             | x::r -> f r (n-1) m
+             | _ -> ()
+           else
+             g l m
+         in
+         f bs n m;
+         print_jsonval oc (JsonObj([("bounties",JsonArr(List.rev !alr));("totalsum",JsonNum(Int64.to_string !bounty_sum))]));
+      | _ -> raise BadCommandForm);
+  ac "queryopenbounties" "queryopenbounties <n> <m>" "Return info about m bounties after the top n (of all time)"
+    (fun oc al ->
+      match al with
+      | [n;m] ->
+         let n = int_of_string n in
+         let m = int_of_string m in
+         let alr = ref [] in
+         let bs = if !bounty_sorted_refreshing then !bounty_sorted_bkp else !bounty_sorted in
+         let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
+         let rec g l m =
+           if m > 0 then
+             match l with
+             | (_,alpha,aid,v,blk,otx)::r ->
+                if Hashtbl.mem my_spent_table aid then
+                  g r m
+                else
+                  begin
+                    let propidjl =
+                      try
+                        let propid = Hashtbl.find term_addr_hashval alpha in
+                        let propnml = prop_names_jsonl "defaultnames" propid in
+                        try
+                          let npropid = Hashtbl.find propid_neg_propid propid in
+                          let npropaddr = hashval_term_addr npropid in
+                          let npropnml = prop_names_jsonl "negdefaultnames" npropid in
+                          if nprop_active_p npropid npropaddr then
+                            [("propid",JsonStr(hashval_hexstring propid));("npropid",JsonStr(hashval_hexstring npropid));("npropaddr",JsonStr(addr_pfgaddrstr (hashval_term_addr npropid)))] @ propnml @ npropnml
+                          else
+                            [("propid",JsonStr(hashval_hexstring propid))] @ propnml @ npropnml
+                        with Not_found ->
+                          [("propid",JsonStr(hashval_hexstring propid))] @ propnml
+                      with Not_found ->
+                        []
+                    in
+                    alr := JsonObj([("bountyvalue",JsonNum(Int64.to_string v));("bountyaddress",JsonStr(addr_pfgaddrstr alpha));("spent",JsonBool(false))] @ propidjl)::!alr;
+                    g r (m-1)
+                  end
+             | _ -> ()
+           else
+             ()
+         in
+         let rec f l n m =
+           if n > 0 then
+             match l with
+             | (_,_,aid,_,_,_)::r ->
+                if Hashtbl.mem my_spent_table aid then
+                  f r n m
+                else
+                  f r (n-1) m
+             | _ -> ()
+           else
+             g l m
+         in
+         f bs n m;
+         print_jsonval oc (JsonObj([("bounties",JsonArr(List.rev !alr));("totalsum",JsonNum(Int64.to_string !open_bounty_sum))]));
+      | _ -> raise BadCommandForm);
+  ac "querycollectedbounties" "querycollectedbounties <n> <m>" "Return info about m collected bounties after the top n (of all time)"
+    (fun oc al ->
+      match al with
+      | [n;m] ->
+         let n = int_of_string n in
+         let m = int_of_string m in
+         let alr = ref [] in
+         let bs = if !bounty_sorted_refreshing then !bounty_sorted_bkp else !bounty_sorted in
+         let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
+         let rec g l m =
+           if m > 0 then
+             match l with
+             | (_,alpha,aid,v,blk,otx)::r ->
+                if Hashtbl.mem my_spent_table aid then
+                  begin
+                    let propidjl =
+                      try
+                        let propid = Hashtbl.find term_addr_hashval alpha in
+                        let propnml = prop_names_jsonl "defaultnames" propid in
+                        try
+                          let npropid = Hashtbl.find propid_neg_propid propid in
+                          let npropaddr = hashval_term_addr npropid in
+                          let npropnml = prop_names_jsonl "negdefaultnames" npropid in
+                          if nprop_active_p npropid npropaddr then
+                            [("propid",JsonStr(hashval_hexstring propid));("npropid",JsonStr(hashval_hexstring npropid));("npropaddr",JsonStr(addr_pfgaddrstr (hashval_term_addr npropid)))] @ propnml @ npropnml
+                          else
+                            [("propid",JsonStr(hashval_hexstring propid))] @ propnml @ npropnml
+                        with Not_found ->
+                          [("propid",JsonStr(hashval_hexstring propid))] @ propnml
+                      with Not_found ->
+                        []
+                    in
+	            alr := JsonObj([("bountyvalue",JsonNum(Int64.to_string v));("bountyaddress",JsonStr(addr_pfgaddrstr alpha));("spent",JsonBool(true))] @ propidjl)::!alr;
+                    g r (m-1)
+                  end
+                else
+                  g r m
+             | _ -> ()
+           else
+             ()
+         in
+         let rec f l n m =
+           if n > 0 then
+             match l with
+             | (_,_,aid,_,_,_)::r ->
+                if Hashtbl.mem my_spent_table aid then
+                  f r (n-1) m
+                else
+                  f r n m
+             | _ -> ()
+           else
+             g l m
+         in
+         f bs n m;
+         print_jsonval oc (JsonObj([("bounties",JsonArr(List.rev !alr));("totalsum",JsonNum(Int64.to_string (Int64.sub !bounty_sum !open_bounty_sum)))]));
+      | _ -> raise BadCommandForm);
+  ac "converth2ta" "converth2ta <inputfile> <outputfile>" "converth2ta "
+    (fun oc al ->
+      match al with
+      | [ifn;ofn] ->
+         let f = open_in ifn in
+         let g = open_out ofn in
+         begin
+           try
+             while true do
+               let l = input_line f in
+               let hh = String.sub l 0 64 in
+               let h = hexstring_hashval hh in
+               Printf.fprintf g "%s:%s\n" (addr_pfgaddrstr (hashval_term_addr h)) l;
+             done
+           with End_of_file -> close_in f; close_out g
+         end
+      | _ -> raise BadCommandForm);
+  ac "queryrecentplacedbounties" "queryrecentplacedbounties <n> <m>" "Return info about m recently placed bounties after the latest n"
+    (fun oc al ->
+      match al with
+      | [n;m] ->
+         let n = int_of_string n in
+         let m = int_of_string m in
+         let alr = ref [] in
+         let bs = !placed_bounty_sorted in
+         let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
+         let lbs = List.length bs in
+         (*         Printf.fprintf oc "Note: There have been a total of %d bounties in all of history.\n" lbs; *)
+         let rec g l m =
+           if m > 0 then
+             match l with
+             | (_,alpha,aid,v,blk,otx)::r ->
+                let spntj = ("spent",JsonBool(Hashtbl.mem my_spent_table aid)) in
+                let propidjl =
+                  try
+                    let propid = Hashtbl.find term_addr_hashval alpha in
+                    let propnml = prop_names_jsonl "defaultnames" propid in
+                    try
+                      let npropid = Hashtbl.find propid_neg_propid propid in
+                      let npropaddr = hashval_term_addr npropid in
+                      let npropnml = prop_names_jsonl "negdefaultnames" npropid in
+                      if nprop_active_p npropid npropaddr then
+                        [("propid",JsonStr(hashval_hexstring propid));("npropid",JsonStr(hashval_hexstring npropid));("npropaddr",JsonStr(addr_pfgaddrstr (hashval_term_addr npropid)))] @ propnml @ npropnml
+                      else
+                        [("propid",JsonStr(hashval_hexstring propid))] @ propnml @ npropnml
+                    with Not_found ->
+                      [("propid",JsonStr(hashval_hexstring propid))] @ propnml
+                  with Not_found ->
+                    []
+                in
+                alr := JsonObj([("bountyvalue",JsonNum(Int64.to_string v));("bountyaddress",JsonStr(addr_pfgaddrstr alpha))] @ propidjl @ [spntj])::!alr;
+                g r (m-1)
+             | _ -> ()
+           else
+             ()
+         in
+         let rec f l n m =
+           if n > 0 then
+             match l with
+             | x::r -> f r (n-1) m
+             | _ -> ()
+           else
+             g l m
+         in
+         f bs n m;
+         print_jsonval oc (JsonObj([("bounties",JsonArr(List.rev !alr));("totalsum",JsonNum(Int64.to_string !bounty_sum))]));
+      | _ -> raise BadCommandForm);
+  ac "queryrecentplacedbountiestext" "queryrecentplacedbountiestext <n> <m>" "Return info about m recently placed bounties after the latest n"
+    (fun oc al ->
+      match al with
+      | [n;m] ->
+         let n = int_of_string n in
+         let m = int_of_string m in
+         let bs = !placed_bounty_sorted in
          let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
          let lbs = List.length bs in
          Printf.fprintf oc "Note: There have been a total of %d bounties in all of history.\n" lbs;
          let rec g l m =
            if m > 0 then
              match l with
-             | (alpha,aid,v,blk,otx)::r ->
+             | (_,alpha,aid,v,blk,otx)::r ->
                 if Hashtbl.mem my_spent_table aid then
                   Printf.fprintf oc "Bounty %s at %s (spent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha)
                 else
@@ -3718,7 +4001,129 @@ let initialize_commands () =
          in
          f bs n m
       | _ -> raise BadCommandForm);
-  ac "queryopenbounties" "queryopenbounties <n> <m>" "Return info about m bounties after the top n (of all time)"
+  ac "queryrecentcollectedbounties" "queryrecentcollectedbounties <n> <m>" "Return info about m recently collected bounties after the latest n"
+    (fun oc al ->
+      match al with
+      | [n;m] ->
+         let n = int_of_string n in
+         let m = int_of_string m in
+         let alr = ref [] in
+         let bs = !collected_bounty_sorted in
+         let rec g l m =
+           if m > 0 then
+             match l with
+             | (spentday,spentpfgblk,spentpfgotx,bday,alpha,aid,v,blk,otx)::r ->
+                let spntjl =
+                  match spentpfgotx with
+                  | Some(spentpfgtx) ->
+                     [("spendheight",JsonNum(Int64.to_string spentday));("spendblock",JsonStr(hashval_hexstring spentpfgblk));("spendtx",JsonStr(hashval_hexstring spentpfgtx))]
+                  | None ->
+                     [("spendheight",JsonNum(Int64.to_string spentday));("spendblock",JsonStr(hashval_hexstring spentpfgblk))]
+                in
+                let createdjl =
+                  match otx with
+                  | Some(txid) ->
+                     [("createdheight",JsonNum(Int64.to_string bday));("createdblock",JsonStr(hashval_hexstring blk));("createdtx",JsonStr(hashval_hexstring txid))]
+                  | None ->
+                     [("createdheight",JsonNum(Int64.to_string bday));("createdblock",JsonStr(hashval_hexstring blk))]
+                in
+                let propidjl =
+                  try
+                    let propid = Hashtbl.find term_addr_hashval alpha in
+                    let propnml = prop_names_jsonl "defaultnames" propid in
+                    try
+                      let npropid = Hashtbl.find propid_neg_propid propid in
+                      let npropaddr = hashval_term_addr npropid in
+                      let npropnml = prop_names_jsonl "negdefaultnames" npropid in
+                      if nprop_active_p npropid npropaddr then
+                        [("propid",JsonStr(hashval_hexstring propid));("npropid",JsonStr(hashval_hexstring npropid));("npropaddr",JsonStr(addr_pfgaddrstr (hashval_term_addr npropid)))] @ propnml @ npropnml
+                      else
+                        [("propid",JsonStr(hashval_hexstring propid))] @ propnml @ npropnml
+                    with Not_found ->
+                      [("propid",JsonStr(hashval_hexstring propid))] @ propnml
+                  with Not_found ->
+                    []
+                in
+                alr := JsonObj([("bountyvalue",JsonNum(Int64.to_string v));("bountyaddress",JsonStr(addr_pfgaddrstr alpha));("spent",JsonBool(true));("blocklifetime",JsonNum(Int64.to_string (Int64.sub spentday bday)))] @ propidjl @ spntjl @ createdjl)::!alr;
+                g r (m-1)
+             | _ -> ()
+           else
+             ()
+         in
+         let rec f l n m =
+           if n > 0 then
+             match l with
+             | x::r -> f r (n-1) m
+             | _ -> ()
+           else
+             g l m
+         in
+         f bs n m;
+         print_jsonval oc (JsonObj([("bounties",JsonArr(List.rev !alr))]))
+      | _ -> raise BadCommandForm);
+  ac "queryrecentcollectedbountiestext" "queryrecentcollectedbountiestext <n> <m>" "Return info about m recently collected bounties after the latest n"
+    (fun oc al ->
+      match al with
+      | [n;m] ->
+         let n = int_of_string n in
+         let m = int_of_string m in
+         let bs = !collected_bounty_sorted in
+         let lbs = List.length bs in
+         Printf.fprintf oc "Note: There have been a total of %d bounties collected in all of history.\n" lbs;
+         let rec g l m =
+           if m > 0 then
+             match l with
+             | (spentday,spentpfgblk,spentpfgotx,bday,alpha,aid,v,blk,otx)::r ->
+                Printf.fprintf oc "Bounty %s at %s collected at Block %Ld, placed at Block %Ld (after %Ld blocks)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha) spentday bday (Int64.sub spentday bday);
+                g r (m-1)
+             | _ -> ()
+           else
+             ()
+         in
+         let rec f l n m =
+           if n > 0 then
+             match l with
+             | x::r -> f r (n-1) m
+             | _ -> ()
+           else
+             g l m
+         in
+         f bs n m
+      | _ -> raise BadCommandForm);
+  ac "querybountiestext" "querybountiestext <n> <m>" "Return info about m bounties after the top n (of all time)"
+    (fun oc al ->
+      match al with
+      | [n;m] ->
+         let n = int_of_string n in
+         let m = int_of_string m in
+         let bs = if !bounty_sorted_refreshing then !bounty_sorted_bkp else !bounty_sorted in
+         let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
+         let lbs = List.length bs in
+         Printf.fprintf oc "Note: There have been a total of %d bounties in all of history.\n" lbs;
+         let rec g l m =
+           if m > 0 then
+             match l with
+             | (_,alpha,aid,v,blk,otx)::r ->
+                if Hashtbl.mem my_spent_table aid then
+                  Printf.fprintf oc "Bounty %s at %s (spent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha)
+                else
+                  Printf.fprintf oc "Bounty %s at %s (unspent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
+                g r (m-1)
+             | _ -> ()
+           else
+             ()
+         in
+         let rec f l n m =
+           if n > 0 then
+             match l with
+             | x::r -> f r (n-1) m
+             | _ -> ()
+           else
+             g l m
+         in
+         f bs n m
+      | _ -> raise BadCommandForm);
+  ac "queryopenbountiestext" "queryopenbountiestext <n> <m>" "Return info about m bounties after the top n (of all time)"
     (fun oc al ->
       match al with
       | [n;m] ->
@@ -3729,7 +4134,7 @@ let initialize_commands () =
          let rec g l m =
            if m > 0 then
              match l with
-             | (alpha,aid,v,blk,otx)::r ->
+             | (_,alpha,aid,v,blk,otx)::r ->
                 if Hashtbl.mem my_spent_table aid then
                   g r m
                 else
@@ -3744,7 +4149,7 @@ let initialize_commands () =
          let rec f l n m =
            if n > 0 then
              match l with
-             | (_,aid,_,_,_)::r ->
+             | (_,_,aid,_,_,_)::r ->
                 if Hashtbl.mem my_spent_table aid then
                   f r n m
                 else
@@ -3755,7 +4160,7 @@ let initialize_commands () =
          in
          f bs n m
       | _ -> raise BadCommandForm);
-  ac "querycollectedbounties" "querycollectedbounties <n> <m>" "Return info about m collected bounties after the top n (of all time)"
+  ac "querycollectedbountiestext" "querycollectedbountiestext <n> <m>" "Return info about m collected bounties after the top n (of all time)"
     (fun oc al ->
       match al with
       | [n;m] ->
@@ -3766,7 +4171,7 @@ let initialize_commands () =
          let rec g l m =
            if m > 0 then
              match l with
-             | (alpha,aid,v,blk,otx)::r ->
+             | (_,alpha,aid,v,blk,otx)::r ->
                 if Hashtbl.mem my_spent_table aid then
                   begin
                     Printf.fprintf oc "Bounty %s at %s (spent)\n" (bars_of_atoms v) (addr_pfgaddrstr alpha);
@@ -3781,7 +4186,7 @@ let initialize_commands () =
          let rec f l n m =
            if n > 0 then
              match l with
-             | (_,aid,_,_,_)::r ->
+             | (_,_,aid,_,_,_)::r ->
                 if Hashtbl.mem my_spent_table aid then
                   f r (n-1) m
                 else
@@ -3800,10 +4205,10 @@ let initialize_commands () =
          begin
            try
              let my_spent_table = if !spent_table_refreshing then spent_table_bkp else spent_table in
-             let (lkey,pfgbh,otxid) = Hashtbl.find my_spent_table hh in
+             let (lkey,pfgbh,otxid,bhght) = Hashtbl.find my_spent_table hh in
              match otxid with
              | Some(txid) ->
-                Printf.fprintf oc "%s was spent by tx %s in block %s\n" h (hashval_hexstring txid) (hashval_hexstring pfgbh)
+                Printf.fprintf oc "%s was spent by tx %s in block %Ld (%s)\n" h (hashval_hexstring txid) bhght (hashval_hexstring pfgbh)
              | None ->
                 Printf.fprintf oc "%s was used to stake block %s\n" h (hashval_hexstring pfgbh)
            with Not_found ->
@@ -3899,6 +4304,160 @@ let initialize_commands () =
 		raise (Failure ("could not interpret " ^ kh ^ " as a block or ledger root"))
 	  end
       | _ -> raise BadCommandForm);
+  ac "displaysubpf" "displaysubpf <pubaddr> <propid> [<pfnum> <loclen> <locnum> <sizelimit>]" "Give part of a subproof from a document in json"
+    (fun oc al ->
+      let (alpha,alphastr,propid,pfnum,loclen,locnum,szlim) =
+        match al with
+        | [alpha;propid;pfnum;loclen;locnum;szlim] ->
+           (pfgaddrstr_addr alpha,alpha,hexstring_hashval propid,int_of_string pfnum,int_of_string loclen,big_int_of_string locnum,int_of_string szlim)
+        | [alpha;propid;pfnum;loclen;locnum] ->
+           (pfgaddrstr_addr alpha,alpha,hexstring_hashval propid,int_of_string pfnum,int_of_string loclen,big_int_of_string locnum,20)
+        | [alpha;propid;pfnum;loclen] ->
+           (pfgaddrstr_addr alpha,alpha,hexstring_hashval propid,int_of_string pfnum,int_of_string loclen,zero_big_int,20)
+        | [alpha;propid;pfnum] ->
+           (pfgaddrstr_addr alpha,alpha,hexstring_hashval propid,int_of_string pfnum,0,zero_big_int,20)
+        | [alpha;propid] ->
+           (pfgaddrstr_addr alpha,alpha,hexstring_hashval propid,0,0,zero_big_int,20)
+        | _ -> raise BadCommandForm
+      in
+      try
+        let (_,thyh,dlah) = Hashtbl.find (if !term_info_refreshing then doc_table_bkp else doc_table) alpha in
+        let (_,_,_,u) = DbAsset.dbget dlah in
+        let dl =
+          match u with
+          | DocPublication(_,_,thyh,dl) -> List.rev dl
+          | _ -> raise (Failure "bug: asset that should have been a doc is not a doc")
+        in
+        let rec search_for_pf dl i itemnum =
+          match dl with
+          | Logic.Docpfof(p,d)::dr ->
+             let pid = hashtag (hashopair2 thyh (tm_hashroot p)) 33l in
+             if pid = propid then
+               if i = 0 then
+                 begin
+                   let tmabbrevp m loclist vcx =
+                     let (j,_) = json_trm_partial alphastr itemnum thyh m szlim loclist vcx in
+                     print_jsonval oc j;
+                     Printf.fprintf oc "\n"
+                   in
+                   let pfabbrevp d loclist vcx hcx =
+                     let (j,_) = json_pf_partial alphastr itemnum thyh d szlim loclist vcx hcx in
+                     print_jsonval oc j;
+                     Printf.fprintf oc "\n"
+                   in
+                   display_subpf_genfun pfabbrevp tmabbrevp d [] loclen locnum [] 0 [] 0
+                 end
+               else
+                 search_for_pf dr (i-1) (itemnum+1)
+             else
+               search_for_pf dr i (itemnum+1)
+          | _::dr -> search_for_pf dr i (itemnum+1)
+          | [] ->
+             raise (Failure (Printf.sprintf "Could not find %dth proof of given prop in given doc" pfnum))
+        in
+        search_for_pf dl pfnum 0
+      with Not_found ->
+        Printf.fprintf oc "Could not find document at %s\n" (addr_pfgaddrstr alpha));
+  ac "displaysubpfhtml" "displaysubpfhtml <pubaddr> <propid> [<pfnum> <loclen> <locnum> <sizelimit>]" "Give part of a subproof from a document in html"
+    (fun oc al ->
+      let (alpha,alphastr,propid,pfnum,loclen,locnum,szlim) =
+        match al with
+        | [alpha;propid;pfnum;loclen;locnum;szlim] ->
+           (pfgaddrstr_addr alpha,alpha,hexstring_hashval propid,int_of_string pfnum,int_of_string loclen,big_int_of_string locnum,int_of_string szlim)
+        | [alpha;propid;pfnum;loclen;locnum] ->
+           (pfgaddrstr_addr alpha,alpha,hexstring_hashval propid,int_of_string pfnum,int_of_string loclen,big_int_of_string locnum,20)
+        | [alpha;propid;pfnum;loclen] ->
+           (pfgaddrstr_addr alpha,alpha,hexstring_hashval propid,int_of_string pfnum,int_of_string loclen,zero_big_int,20)
+        | [alpha;propid;pfnum] ->
+           (pfgaddrstr_addr alpha,alpha,hexstring_hashval propid,int_of_string pfnum,0,zero_big_int,20)
+        | [alpha;propid] ->
+           (pfgaddrstr_addr alpha,alpha,hexstring_hashval propid,0,0,zero_big_int,20)
+        | _ -> raise BadCommandForm
+      in
+      try
+        let (_,thyh,dlah) = Hashtbl.find (if !term_info_refreshing then doc_table_bkp else doc_table) alpha in
+        let (_,_,_,u) = DbAsset.dbget dlah in
+        let dl =
+          match u with
+          | DocPublication(_,_,thyh,dl) -> List.rev dl
+          | _ -> raise (Failure "bug: asset that should have been a doc is not a doc")
+        in
+        let rec search_for_pf dl i itemnum =
+          match dl with
+          | Logic.Docpfof(p,d)::dr ->
+             let pid = hashtag (hashopair2 thyh (tm_hashroot p)) 33l in
+             if pid = propid then
+               if i = 0 then
+                 begin
+                   let tmabbrevp m loclist vcx =
+                     let (s,_) = html_trm_partial alphastr itemnum thyh m szlim loclist vcx in
+                     Printf.fprintf oc "%s\n" s;
+                   in
+                   let pfabbrevp d loclist vcx hcx =
+                     let (s,_) = html_pf_partial alphastr itemnum thyh d szlim loclist vcx hcx in
+                     Printf.fprintf oc "%s\n" s;
+                   in
+                   display_subpf_genfun pfabbrevp tmabbrevp d [] loclen locnum [] 0 [] 0
+                 end
+               else
+                 search_for_pf dr (i-1) (itemnum+1)
+             else
+               search_for_pf dr i (itemnum+1)
+          | _::dr -> search_for_pf dr i (itemnum+1)
+          | [] ->
+             raise (Failure (Printf.sprintf "Could not find %dth proof of given prop in given doc" pfnum))
+        in
+        search_for_pf dl pfnum 0
+      with Not_found ->
+        Printf.fprintf oc "Could not find document at %s\n" (addr_pfgaddrstr alpha));
+  ac "displaysubitemhtml" "displaysubpfhtml <pubaddr> <itemnum> [<loclen> <locnum> <sizelimit>]" "Give part of a subproof from a document in html"
+    (fun oc al ->
+      let (alpha,alphastr,itemnum,loclen,locnum,szlim) =
+        match al with
+        | [alpha;itemnum;loclen;locnum;szlim] ->
+           (pfgaddrstr_addr alpha,alpha,int_of_string itemnum,int_of_string loclen,big_int_of_string locnum,int_of_string szlim)
+        | [alpha;itemnum;loclen;locnum] ->
+           (pfgaddrstr_addr alpha,alpha,int_of_string itemnum,int_of_string loclen,big_int_of_string locnum,20)
+        | [alpha;itemnum;loclen] ->
+           (pfgaddrstr_addr alpha,alpha,int_of_string itemnum,int_of_string loclen,zero_big_int,20)
+        | [alpha;itemnum] ->
+           (pfgaddrstr_addr alpha,alpha,int_of_string itemnum,0,zero_big_int,20)
+        | [alpha] ->
+           (pfgaddrstr_addr alpha,alpha,0,0,zero_big_int,20)
+        | _ -> raise BadCommandForm
+      in
+      try
+        let (_,thyh,dlah) = Hashtbl.find (if !term_info_refreshing then doc_table_bkp else doc_table) alpha in
+        let (_,_,_,u) = DbAsset.dbget dlah in
+        let dl =
+          match u with
+          | DocPublication(_,_,thyh,dl) -> List.rev dl
+          | _ -> raise (Failure "bug: asset that should have been a doc is not a doc")
+        in
+        let tmabbrevp m loclist vcx =
+          let (s,_) = html_trm_partial alphastr itemnum thyh m szlim loclist vcx in
+          Printf.fprintf oc "%s\n" s;
+        in
+        let pfabbrevp d loclist vcx hcx =
+          let (s,_) = html_pf_partial alphastr itemnum thyh d szlim loclist vcx hcx in
+          Printf.fprintf oc "%s\n" s;
+        in
+        match List.nth dl itemnum with
+        | Logic.Docpfof(p,d) ->
+           display_subpf_genfun pfabbrevp tmabbrevp d [] loclen locnum [] 0 [] 0
+        | Docsigna(h) -> Printf.fprintf oc "\n"
+        | Docparam(h,a) -> Printf.fprintf oc "\n"
+        | Docdef(a,m) ->
+           display_subtm_genfun tmabbrevp m [] loclen locnum []
+        | Docknown(p) ->
+           display_subtm_genfun tmabbrevp p [] loclen locnum []
+        | Docconj(p) ->
+           display_subtm_genfun tmabbrevp p [] loclen locnum []
+      with
+      | Failure(str) when str = "nth" ->
+         Printf.fprintf oc "Document at %s has no item %d\n" (addr_pfgaddrstr alpha) itemnum;
+      | Not_found ->
+         Printf.fprintf oc "Could not find document at %s\n" (addr_pfgaddrstr alpha));
   ac "filterwallet" "filterwallet [<ledgerroot>]" "Remove private keys/addresses not classified as fresh if they are empty.\nA backup of the old wallet is kept in the walletbkps directory."
     (fun oc al ->
       let lr =
@@ -4062,7 +4621,7 @@ let initialize_commands () =
       if al = [] then
 	begin
 	  try
-	    let utxol = Ltcrpc.ltc_listunspent () in
+	    let utxol = Ltcrpc.ltc2_listunspent () in
 	    Printf.fprintf oc "%d ltc utxos\n" (List.length utxol);
 	    List.iter
 	      (fun u ->
@@ -5305,6 +5864,8 @@ let initialize_commands () =
 	      raise e
 	  end
       | _ -> raise BadCommandForm);
+  ac "resendtxpool" "resendtxpool" "Send inventory of valid txs in txpoll to peers"
+    (fun oc al -> resend_txpool oc);
   ac "txpool" "txpool" "Print info about txpool"
     (fun oc al ->
       Hashtbl.iter
@@ -5465,6 +6026,25 @@ let initialize_commands () =
 		  Printf.fprintf oc "Cannot find block height for best block %s\n" (hashval_hexstring dbh)
 	  end
       | _ -> raise BadCommandForm);
+  ac "theoriestext" "theoriestext" "theoriestext"
+    (fun oc _ ->
+      let ht = if !term_info_refreshing then theory_info_bkp else theory_info in
+      let hfthyid = Checking.hfthyid in
+      let thynm thyh = try Hashtbl.find mglegendt thyh with Not_found -> "" in
+      Printf.fprintf oc "%s (%s) built-in\n" (thynm hfthyid) (hashval_hexstring hfthyid);
+      Hashtbl.iter (fun thyh (aid,alpha,beta) -> Printf.fprintf oc "%s (%s) %s %s\n" (thynm thyh) (hashval_hexstring thyh) (addr_pfgaddrstr alpha) (hashval_hexstring aid)) ht);
+  ac "theories" "theories" "theories"
+    (fun oc _ ->
+      let ht = if !term_info_refreshing then theory_info_bkp else theory_info in
+      let al = ref [] in
+      let hfthyid = Checking.hfthyid in
+      let thynms thyh = Hashtbl.find_all mglegendt thyh in
+      al := JsonObj([("theoryid",JsonStr(hashval_hexstring hfthyid));("names",JsonArr(List.map (fun x -> JsonStr(x)) (thynms hfthyid)));("builtin",JsonBool(true))])::!al;
+      Hashtbl.iter
+        (fun thyh (aid,alpha,beta) -> al := JsonObj([("theoryid",JsonStr(hashval_hexstring thyh));("names",JsonArr(List.map (fun x -> JsonStr(x)) (thynms thyh)));("assetid",JsonStr(hashval_hexstring aid));("addr",JsonStr(addr_pfgaddrstr alpha));("publisher",JsonStr(addr_pfgaddrstr (payaddr_addr beta)))])::!al)
+        ht;
+      print_jsonval oc (JsonArr(!al));
+      Printf.fprintf oc "\n");
   ac "theory" "theory <theoryid>" "Print information about a confirmed theory"
     (fun oc al ->
       match al with
@@ -5619,7 +6199,7 @@ let initialize_commands () =
 	  print_jsonval oc (json_stx stau);
 	  Printf.fprintf oc "\n"
       | _ -> raise BadCommandForm);
-  ac "querybestblock" "querybestblock" "Print the current best block in json format.\nIn case of a tie, only one of the current best blocks is returned.\nThis command is intended to support explorers.\nSee also: bestblock"
+  ac "querybestblocktext" "querybestblocktext" "Print the current best block in json format.\nIn case of a tie, only one of the current best blocks is returned.\nThis command is intended to support explorers.\nSee also: bestblock"
     (fun oc al ->
       let best = get_bestblock_print_warnings oc in
       match best with
@@ -5634,6 +6214,22 @@ let initialize_commands () =
 	      print_jsonval oc (JsonObj([("height",JsonNum(Int64.to_string blkh));("block",JsonStr(hashval_hexstring h))]))
 	  with Not_found ->
 	    Printf.fprintf oc "Cannot determine height of best block %s\n" (hashval_hexstring h));
+  ac "querybestblock" "querybestblock" "Print the current best block in json format.\nIn case of a tie, only one of the current best blocks is returned.\nThis command is intended to support explorers.\nSee also: bestblock"
+    (fun oc al ->
+      let best = get_bestblock_or_previous () in
+      match best with
+      | None -> print_jsonval oc (JsonStr("none"))
+      | Some(h,lbk,ltx) ->
+         let al = if !Config.explorer then [("numaddresses",JsonNum(string_of_int !addr_count));("numtxs",JsonNum(string_of_int !tx_count))] else [] in
+	  try
+	    let (_,_,_,_,_,_,blkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
+	    try
+	      let lr = get_ledgerroot best in
+	      print_jsonval oc (JsonObj([("height",JsonNum(Int64.to_string blkh));("block",JsonStr(hashval_hexstring h));("ledgerroot",JsonStr(hashval_hexstring lr))] @ al))
+	    with Not_found ->
+	      print_jsonval oc (JsonObj([("height",JsonNum(Int64.to_string blkh));("block",JsonStr(hashval_hexstring h))] @ al))
+	  with Not_found ->
+	    print_jsonval oc (JsonObj([("block",JsonStr(hashval_hexstring h))] @ al)));
   ac "bestblock" "bestblock" "Print the current best block in text format.\nIn case of a tie, only one of the current best blocks is returned.\nSee also: querybestblock"
     (fun oc al ->
       let best = get_bestblock_print_warnings oc in
@@ -5760,6 +6356,10 @@ let initialize_commands () =
       | [] -> Commands.reprocess_blockchain oc (get_bestblock_print_warnings oc) 1
       | [n] -> let n = int_of_string n in Commands.reprocess_blockchain oc (get_bestblock_print_warnings oc) n
       | _ -> raise BadCommandForm);
+  ac "numaddresses" "numaddresses" "Total number of addresses used in the block chain so far"
+    (fun oc _ -> Printf.fprintf oc "%d\n" !addr_count);
+  ac "numtxs" "numtxs" "Total number of txs used in the block chain so far"
+    (fun oc _ -> Printf.fprintf oc "%d\n" !tx_count);
   ac "reprocessblock" "reprocessblock <blockid> <ltcblock> <ltcburntx>" "Manually reprocess a given block.\nThis is useful if either -ltcoffline is set or if part of the current ledger seems to be missing from the local node.\nIf the current node has the full ledger from before the block,\nthen processing the block should ensure the node has the resulting full ledger."
     (fun oc al ->
       match al with
@@ -5891,25 +6491,57 @@ let init_ledger () =
             | _ -> Printf.printf "Init thy tree root mismatch."; flush stdout; !exitfn 1
     end;;
 
+let placed_bounty_sorted_recomp : (int64 * addr * hashval * int64 * hashval * hashval option) list ref = ref []
+let collected_bounty_sorted_recomp : (int64 * hashval * hashval option * int64 * addr * hashval * int64 * hashval * hashval option) list ref = ref []
+
+let explorer_tables_debug () =
+  Printf.printf "spent_table %d\n" (Hashtbl.length spent_table);
+  Printf.printf "theory_info %d\n" (Hashtbl.length theory_info);
+  Printf.printf "addr_contents %d\n" (Hashtbl.length addr_contents_table);
+  Printf.printf "term_info %d\n" (Hashtbl.length term_info);
+  Printf.printf "obj_info %d\n" (Hashtbl.length obj_info);
+  Printf.printf "prop_info %d\n" (Hashtbl.length prop_info);
+  Printf.printf "owns_obj_info %d\n" (Hashtbl.length owns_obj_info);
+  Printf.printf "owns_prop_info %d\n" (Hashtbl.length owns_prop_info);
+  Printf.printf "owns_negprop_info %d\n" (Hashtbl.length owns_negprop_info);
+  Printf.printf "created_obj_info %d\n" (Hashtbl.length created_obj_info);
+  Printf.printf "created_prop_info %d\n" (Hashtbl.length created_prop_info);
+  Printf.printf "created_negprop_info %d\n" (Hashtbl.length created_negprop_info);
+  Printf.printf "term_theory_objid %d\n" (Hashtbl.length term_theory_objid);
+  Printf.printf "sig_table %d\n" (Hashtbl.length sig_table);
+  Printf.printf "doc_table %d\n" (Hashtbl.length doc_table)
+
 let rec refresh_explorer_tables_rec lkey =
   try
     let (spenthere,par) = Hashtbl.find spent_history_table lkey in
+    let bhght = Hashtbl.find blockheight_history_table lkey in
     List.iter
-      (fun (aid,pfgbh,pfgtxid) -> Hashtbl.add spent_table aid (lkey,pfgbh,pfgtxid))
+      (fun (aid,pfgbh,pfgtxid) -> Hashtbl.replace spent_table aid (lkey,pfgbh,pfgtxid,bhght))
       spenthere;
-    let bountyhere = List.sort (fun (_,_,v1,_,_) (_,_,v2,_,_) -> compare v2 v1) (Hashtbl.find_all bounty_history_table lkey) in
-    bounty_sorted := List.merge (fun (_,_,v1,_,_) (_,_,v2,_,_) -> compare v2 v1) bountyhere !bounty_sorted;
+    let bountyhere = Hashtbl.find_all bounty_history_table lkey in
+    let bountyherebyval = List.sort (fun (_,_,_,v1,_,_) (_,_,_,v2,_,_) -> compare v2 v1) bountyhere in
+    bounty_sorted := List.merge (fun (_,_,_,v1,_,_) (_,_,_,v2,_,_) -> compare v2 v1) bountyherebyval !bounty_sorted;
+    placed_bounty_sorted_recomp := List.merge (fun (b1,_,_,_,_,_) (b2,_,_,_,_,_) -> compare b2 b1) bountyhere !placed_bounty_sorted_recomp;
+    (try tx_count_recompute := !tx_count_recompute + Hashtbl.find block_txcount_history_table lkey with Not_found -> incr tx_count_recompute);
     List.iter
-      (fun (aid,ah,pfgbh,otx) -> Hashtbl.add asset_id_hash_table aid (ah,pfgbh,otx))
+      (fun (thyh,aid,alpha,beta) -> Hashtbl.replace theory_info thyh (aid,alpha,beta))
+      (Hashtbl.find_all theory_history_table lkey);
+    List.iter
+      (fun (alpha,a) ->
+        if not (Hashtbl.mem addr_contents_table alpha) then incr addr_count_recompute;
+        Hashtbl.add addr_contents_table alpha a)
+      (Hashtbl.find_all addr_contents_history_table lkey);
+    List.iter
+      (fun (aid,ah,pfgbh,otx) -> Hashtbl.replace asset_id_hash_table aid (ah,pfgbh,otx))
       (Hashtbl.find_all asset_id_hash_history lkey);
     List.iter
-      (fun (h,m,aid,thyh,pfgbh,otx) -> Hashtbl.add term_info h (m,aid,thyh,pfgbh,otx))
+      (fun (h,m,aid,thyh,pfgbh,otx,isprop,objorpropid) -> Hashtbl.replace term_info h (m,aid,thyh,pfgbh,otx,isprop,objorpropid))
       (Hashtbl.find_all term_history_table lkey);
     List.iter
-      (fun (objid,thyh,a,h,prim) -> Hashtbl.add obj_info objid (thyh,a,h,prim))
+      (fun (objid,thyh,a,h,m,prim,pa) -> Hashtbl.replace obj_info objid (thyh,a,h,m,prim,pa))
       (Hashtbl.find_all obj_history_table lkey);
     List.iter
-      (fun (propid,thyh,h,prim) -> Hashtbl.add prop_info propid (thyh,h,prim))
+      (fun (propid,thyh,h,m,prim,pa) -> Hashtbl.replace prop_info propid (thyh,h,m,prim,pa))
       (Hashtbl.find_all prop_history_table lkey);
     List.iter
       (fun (objid,aid,bday,beta,gamma,r) ->
@@ -5929,9 +6561,26 @@ let rec refresh_explorer_tables_rec lkey =
         if not (Hashtbl.mem owns_negprop_info alpha) then
           Hashtbl.add owns_negprop_info alpha (aid,bday,beta))
       (Hashtbl.find_all ownsnegprop_history_table lkey);
+    List.iter
+      (fun (thyh,tmr,objid) -> Hashtbl.replace term_theory_objid (thyh,tmr) objid)
+      (Hashtbl.find_all term_theory_objid_history_table lkey);
+    List.iter
+      (fun (propid,alpha) -> Hashtbl.replace propid_conj_pub propid alpha)
+      (Hashtbl.find_all propid_conj_pub_history_table lkey);
+    List.iter
+      (fun (alpha,beta,thyh,dlah) ->
+        Hashtbl.replace sig_table alpha (beta,thyh,dlah))
+      (Hashtbl.find_all sig_history_table lkey);
+    List.iter
+      (fun (alpha,beta,thyh,dlah) ->
+        Hashtbl.replace doc_table alpha (beta,thyh,dlah))
+      (Hashtbl.find_all doc_history_table lkey);
     match par with
     | Some(plkey) -> refresh_explorer_tables_rec plkey
-    | None -> ()
+    | None ->
+       Hashtbl.iter
+         (fun tmr objid -> Hashtbl.add term_theory_objid (Some(Checking.hfthyid),tmr) objid)
+         term_hfbuiltin_objid
   with Not_found -> raise (Failure "unexpected failure")
 
 let refresh_explorer_tables () =
@@ -5943,15 +6592,19 @@ let refresh_explorer_tables () =
        let tmstart = Unix.time () in
        (*       Printf.printf "Refreshing Explorer Tables\n"; *)
        let lkey = hashpair lbk ltx in
+       Hashtbl.clear addr_contents_table_bkp;
+       Hashtbl.iter (fun k v -> Hashtbl.add addr_contents_table_bkp k v) addr_contents_table;
        Hashtbl.clear asset_id_hash_table_bkp;
        Hashtbl.iter (fun k v -> Hashtbl.add asset_id_hash_table_bkp k v) asset_id_hash_table;
        asset_id_hash_refreshing := true;
+       Hashtbl.clear addr_contents_table;
        Hashtbl.clear asset_id_hash_table;
        Hashtbl.clear spent_table_bkp;
        Hashtbl.iter (fun k v -> Hashtbl.add spent_table_bkp k v) spent_table;
        spent_table_refreshing := true;
        bounty_sorted_bkp := !bounty_sorted;
        bounty_sorted_refreshing := true;
+       Hashtbl.clear theory_info_bkp;
        Hashtbl.clear term_info_bkp;
        Hashtbl.clear obj_info_bkp;
        Hashtbl.clear prop_info_bkp;
@@ -5961,6 +6614,11 @@ let refresh_explorer_tables () =
        Hashtbl.clear owns_obj_info_bkp;
        Hashtbl.clear owns_prop_info_bkp;
        Hashtbl.clear owns_negprop_info_bkp;
+       Hashtbl.clear term_theory_objid_bkp;
+       Hashtbl.clear propid_conj_pub_bkp;
+       Hashtbl.clear sig_table_bkp;
+       Hashtbl.clear doc_table_bkp;
+       Hashtbl.iter (fun k v -> Hashtbl.add theory_info_bkp k v) theory_info;
        Hashtbl.iter (fun k v -> Hashtbl.add term_info_bkp k v) term_info;
        Hashtbl.iter (fun k v -> Hashtbl.add obj_info_bkp k v) obj_info;
        Hashtbl.iter (fun k v -> Hashtbl.add prop_info_bkp k v) prop_info;
@@ -5970,7 +6628,12 @@ let refresh_explorer_tables () =
        Hashtbl.iter (fun k v -> Hashtbl.add owns_obj_info_bkp k v) owns_obj_info;
        Hashtbl.iter (fun k v -> Hashtbl.add owns_prop_info_bkp k v) owns_prop_info;
        Hashtbl.iter (fun k v -> Hashtbl.add owns_negprop_info_bkp k v) owns_negprop_info;
+       Hashtbl.iter (fun k v -> Hashtbl.add term_theory_objid_bkp k v) term_theory_objid;
+       Hashtbl.iter (fun k v -> Hashtbl.add propid_conj_pub_bkp k v) propid_conj_pub;
+       Hashtbl.iter (fun k v -> Hashtbl.add sig_table_bkp k v) sig_table;
+       Hashtbl.iter (fun k v -> Hashtbl.add doc_table_bkp k v) doc_table;
        term_info_refreshing := true;
+       Hashtbl.clear theory_info;
        Hashtbl.clear term_info;
        Hashtbl.clear obj_info;
        Hashtbl.clear prop_info;
@@ -5981,13 +6644,34 @@ let refresh_explorer_tables () =
        Hashtbl.clear owns_obj_info;
        Hashtbl.clear owns_prop_info;
        Hashtbl.clear owns_negprop_info;
+       Hashtbl.clear term_theory_objid;
        bounty_sorted := [];
-       refresh_explorer_tables_rec lkey;
+       placed_bounty_sorted_recomp := [];
+       addr_count_recompute := 0;
+       tx_count_recompute := 0;
+       refresh_explorer_tables_rec lkey; (** actually do the refresh **)
+       (*       explorer_tables_debug (); *)
+       addr_count := !addr_count_recompute;
+       tx_count := !tx_count_recompute;
        asset_id_hash_refreshing := false;
        spent_table_refreshing := false;
        bounty_sorted_refreshing := false;
        term_info_refreshing := false;
        (*       Printf.printf "Finished refreshing Explorer Tables %f seconds\n" (Unix.time () -. tmstart); *)
+       placed_bounty_sorted := !placed_bounty_sorted_recomp;
+       collected_bounty_sorted_recomp := [];
+       List.iter
+         (fun (bday,alpha,aid,v,blk,otx) ->
+           try
+             let (_,pfgbh,pfgtxid,spentday) = Hashtbl.find spent_table aid in
+             collected_bounty_sorted_recomp := List.merge (fun (spentday1,_,_,_,_,_,_,_,_) (spentday2,_,_,_,_,_,_,_,_) -> compare spentday2 spentday1)
+                                                 [(spentday,pfgbh,pfgtxid,bday,alpha,aid,v,blk,otx)]
+                                                 !collected_bounty_sorted_recomp
+           with Not_found -> ())
+         !bounty_sorted;
+       collected_bounty_sorted := !collected_bounty_sorted_recomp;
+       bounty_sum := List.fold_left (fun x (_,_,aid,y,_,_) -> Int64.add x y) 0L !bounty_sorted;
+       open_bounty_sum := List.fold_left (fun x (_,_,aid,y,_,_) -> if Hashtbl.mem spent_table aid then x else Int64.add x y) 0L !bounty_sorted;
        (* generate a new owned file for Megalodon *)
        let ddir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
        let nwownedfn = Filename.concat ddir "owned.new" in
@@ -6012,22 +6696,33 @@ let refresh_explorer_tables () =
   | Not_found -> ()
   | Failure(ex) ->
      Printf.printf "Failure (%s) while refreshing explorer tables. Using bkp.\n" ex;
+     Hashtbl.clear addr_contents_table;
+     Hashtbl.iter (fun k v -> Hashtbl.add addr_contents_table k v) addr_contents_table_bkp;
      Hashtbl.clear asset_id_hash_table;
      Hashtbl.iter (fun k v -> Hashtbl.add asset_id_hash_table k v) asset_id_hash_table_bkp;
      Hashtbl.clear spent_table;
      Hashtbl.iter (fun k v -> Hashtbl.add spent_table k v) spent_table_bkp;
+     Hashtbl.clear theory_info;
+     Hashtbl.iter (fun k v -> Hashtbl.add theory_info k v) theory_info_bkp;
      Hashtbl.clear term_info;
      Hashtbl.iter (fun k v -> Hashtbl.add term_info k v) term_info_bkp;
      Hashtbl.clear obj_info;
      Hashtbl.iter (fun k v -> Hashtbl.add obj_info k v) obj_info_bkp;
      Hashtbl.clear prop_info;
      Hashtbl.iter (fun k v -> Hashtbl.add prop_info k v) prop_info_bkp;
+     Hashtbl.clear term_theory_objid;
+     Hashtbl.iter (fun k v -> Hashtbl.add term_theory_objid k v) term_theory_objid_bkp;
+     Hashtbl.clear sig_table;
+     Hashtbl.clear doc_table;
+     Hashtbl.iter (fun k v -> Hashtbl.add sig_table k v) sig_table_bkp;
+     Hashtbl.iter (fun k v -> Hashtbl.add doc_table k v) doc_table_bkp;
      Hashtbl.clear created_obj_info;
      Hashtbl.clear created_prop_info;
      Hashtbl.clear created_negprop_info;
      Hashtbl.clear owns_obj_info;
      Hashtbl.clear owns_prop_info;
      Hashtbl.clear owns_negprop_info;
+     Hashtbl.clear propid_conj_pub_bkp;
      Hashtbl.iter (fun k v -> Hashtbl.add term_info k v) term_info_bkp;
      Hashtbl.iter (fun k v -> Hashtbl.add obj_info k v) obj_info_bkp;
      Hashtbl.iter (fun k v -> Hashtbl.add prop_info k v) prop_info_bkp;
@@ -6037,13 +6732,21 @@ let refresh_explorer_tables () =
      Hashtbl.iter (fun k v -> Hashtbl.add owns_obj_info k v) owns_obj_info_bkp;
      Hashtbl.iter (fun k v -> Hashtbl.add owns_prop_info k v) owns_prop_info_bkp;
      Hashtbl.iter (fun k v -> Hashtbl.add owns_negprop_info k v) owns_negprop_info_bkp;
+     Hashtbl.iter (fun k v -> Hashtbl.add propid_conj_pub k v) propid_conj_pub_bkp;
      bounty_sorted := !bounty_sorted_bkp;
      asset_id_hash_refreshing := false;
      spent_table_refreshing := false;
      bounty_sorted_refreshing := false;
      term_info_refreshing := false
 
+let resend_txpool_sometimes () =
+  while true do
+    Thread.delay 3600.0;
+    resend_txpool stdout
+  done
+
 let refresh_explorer_tables_sometimes () =
+  ac "refresh_explorer_tables" "refresh_explorer_tables" "refresh_explorer_tables" (fun _ _ -> refresh_explorer_tables ());
   while true do
     Thread.delay 3600.0;
     refresh_explorer_tables ()
@@ -6060,10 +6763,12 @@ let rec init_explorer_tables_rec lkey =
            [])
   in
   let handle_out otx (alpha,(aid,bday,obl,u)) =
-    Hashtbl.add asset_id_hash_history lkey (aid,hashasset (aid,bday,obl,u),pfgbh,otx);
+    let ah = hashasset (aid,bday,obl,u) in
+    Hashtbl.add asset_id_hash_history lkey (aid,ah,pfgbh,otx);
+    Hashtbl.add addr_contents_history_table lkey (alpha,(aid,bday,obl,u));
     match u with
     | Bounty(v) ->
-       Hashtbl.add bounty_history_table lkey (alpha,aid,v,pfgbh,otx)
+       Hashtbl.add bounty_history_table lkey (bday,alpha,aid,v,pfgbh,otx)
     | OwnsObj(oid,gamma,r) ->
        begin
          match obl with
@@ -6088,6 +6793,12 @@ let rec init_explorer_tables_rec lkey =
     | TheoryPublication(beta,_,thyspec) ->
        begin
          let thyh = hashtheory (theoryspec_theory thyspec) in
+         begin
+           match thyh with
+           | Some(thyh) ->
+              Hashtbl.add theory_history_table lkey (thyh,aid,alpha,beta);
+           | None -> ()
+         end;
          let cnt = ref 0 in
          List.iter
            (fun i ->
@@ -6096,56 +6807,107 @@ let rec init_explorer_tables_rec lkey =
                 let m = Logic.Prim(!cnt) in
                 let h = tm_hashroot m in
                 incr cnt;
-                Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
                 let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
-                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,true)
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval objid;
+                Hashtbl.add term_theory_objid_history_table lkey (thyh,h,objid);
+                Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx,false,objid);
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,m,true,alpha)
              | Thyaxiom(p) ->
                 let h = tm_hashroot p in
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval propid;
+                let np = neg_prop p in
+                let nh = tm_hashroot np in
+                let npropid = hashtag (hashopair2 thyh nh) 33l in
+                enter_term_addr_hashval nh;
+                enter_term_addr_hashval npropid;
+                Hashtbl.add propid_neg_propid h nh;
+                Hashtbl.add propid_neg_propid nh h;
+                Hashtbl.add propid_neg_propid propid npropid;
+                Hashtbl.add propid_neg_propid npropid propid;
                 begin
                   match p with
                   | TmH(_) -> ()
                   | _ ->
-                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx);
+                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx,true,propid);
                 end;
-                let propid = hashtag (hashopair2 thyh h) 33l in
-                Hashtbl.add prop_history_table lkey (propid,thyh,h,true)
+                Hashtbl.add prop_history_table lkey (propid,thyh,h,p,true,alpha)
              | Thydef(a,m) ->
                 let h = tm_hashroot m in
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval objid;
+                Hashtbl.add term_theory_objid_history_table lkey (thyh,h,objid);
                 begin
                   match m with
                   | TmH(_) -> ()
                   | _ ->
-                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx,false,objid);
                 end;
-                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
-                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false))
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,m,false,alpha))
            (List.rev thyspec)
+       end
+    | SignaPublication(beta,_,thyh,_) ->
+       begin
+         Hashtbl.add sig_history_table lkey (alpha,beta,thyh,ah);
        end
     | DocPublication(beta,_,thyh,dl) ->
        begin
+         Hashtbl.add doc_history_table lkey (alpha,beta,thyh,ah);
          List.iter
            (fun i ->
              match i with
              | Logic.Docpfof(p,_) ->
                 let h = tm_hashroot p in
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval propid;
+                let np = neg_prop p in
+                let nh = tm_hashroot np in
+                let npropid = hashtag (hashopair2 thyh nh) 33l in
+                enter_term_addr_hashval nh;
+                enter_term_addr_hashval npropid;
+                Hashtbl.add propid_neg_propid h nh;
+                Hashtbl.add propid_neg_propid nh h;
+                Hashtbl.add propid_neg_propid propid npropid;
+                Hashtbl.add propid_neg_propid npropid propid;
                 begin
                   match p with
                   | TmH(_) -> ()
                   | _ ->
-                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx);
+                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx,true,propid);
                 end;
-                let propid = hashtag (hashopair2 thyh h) 33l in
-                Hashtbl.add prop_history_table lkey (propid,thyh,h,false)
+                Hashtbl.add prop_history_table lkey (propid,thyh,h,p,false,alpha)
              | Docdef(a,m) ->
                 let h = tm_hashroot m in
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval objid;
+                Hashtbl.add term_theory_objid_history_table lkey (thyh,h,objid);
                 begin
                   match m with
                   | TmH(_) -> ()
                   | _ ->
-                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx,false,objid);
                 end;
-                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
-                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false)
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,m,false,alpha)
+             | Docconj(p) ->
+                let h = tm_hashroot p in
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval propid;
+                let np = neg_prop p in
+                let nh = tm_hashroot np in
+                let npropid = hashtag (hashopair2 thyh nh) 33l in
+                enter_term_addr_hashval nh;
+                enter_term_addr_hashval npropid;
+                Hashtbl.add propid_neg_propid h nh;
+                Hashtbl.add propid_neg_propid nh h;
+                Hashtbl.add propid_neg_propid propid npropid;
+                Hashtbl.add propid_neg_propid npropid propid;
+                Hashtbl.add propid_conj_pub_history_table lkey (propid,alpha);
              | _ -> ())
            dl
        end
@@ -6164,6 +6926,8 @@ let rec init_explorer_tables_rec lkey =
         tauin;
       List.iter (handle_out (Some(stxid))) (add_vout pblkhght txh tauout 0l))
     bd.blockdelta_stxl;
+  Hashtbl.add blockheight_history_table lkey pblkhght;
+  Hashtbl.add block_txcount_history_table lkey (1 + List.length bd.blockdelta_stxl);
   match par with
   | Some(plbk,pltx) ->
      Hashtbl.add spent_history_table lkey (!spenthereinfo,Some(hashpair plbk pltx));
@@ -6183,8 +6947,9 @@ let rec init_explorer_tables_rec lkey =
               let h = tm_hashroot m in
               Hashtbl.add term_info_hf h m;
               let objid = hashtag (hashpair thyh (hashpair h (hashtp a))) 32l in
+              Hashtbl.add term_hfbuiltin_objid h objid;
               incr cnt;
-              Hashtbl.add obj_info_hf objid (a,h);
+              Hashtbl.add obj_info_hf objid (a,h,m);
            | Thyaxiom(p) ->
               let h = tm_hashroot p in
               begin
@@ -6194,7 +6959,7 @@ let rec init_explorer_tables_rec lkey =
                    Hashtbl.add term_info_hf h p;
               end;
               let propid = hashtag (hashpair thyh h) 33l in
-              Hashtbl.add prop_info_hf propid h;
+              Hashtbl.add prop_info_hf propid (h,p);
            | Thydef(a,m) -> raise (Failure "does not happen in HF"))
          (List.rev thyspec)
      end;;
@@ -6212,12 +6977,13 @@ let init_explorer_tables () =
        init_explorer_tables_rec (hashpair lbk ltx);
        Printf.printf "Finished creating Explorer Tables: %f seconds\n" (Unix.time () -. tmstart);
   with Not_found ->
-    Printf.printf "Failed to create Explorer Tables: %f seconds\n" (Unix.time () -. tmstart);
+    Printf.printf "Failed to create Explorer Tables: %f seconds\nExiting.\n" (Unix.time () -. tmstart);
+    !exitfn 1;
     ();;
 
 let set_signal_handlers () =
 (*  let generic_signal_handler str sg =
-    Utils.log_string (Printf.sprintf "thread %d got signal %d (%s) - terminating\n" (Thread.id (Thread.self ())) sg str);
+    Utils.log_string (Printf.sprintf "got signal %d (%s) - terminating\n" sg str);
     !exitfn 1;
   in *)
 (*  Sys.set_signal Sys.sigvtalrm Sys.Signal_ignore; (* these might make sense, but not sure *)
@@ -6247,12 +7013,9 @@ let initialize () =
     Gc.set { (Gc.get ()) with Gc.stack_limit = !Config.gc_stack_limit; Gc.space_overhead = !Config.gc_space_overhead; };
     if Sys.file_exists (Filename.concat datadir "lock") then
       begin
-	if not !Config.daemon then
-	  begin
-	    Printf.printf "Cannot start Proofgold. Do you already have Proofgold running? If not, remove: %s\n" (Filename.concat datadir "lock");
-	    flush stdout;
-	    exit 1;
-	  end;
+	Printf.printf "Cannot start Proofgold. Do you already have Proofgold running? If not, remove: %s\n" (Filename.concat datadir "lock");
+	flush stdout;
+	exit 1;
       end;
     lock datadir;
     if not !Config.daemon then (Printf.printf "Initializing the database...\n"; flush stdout);
@@ -6607,11 +7370,11 @@ let main () =
 	  !exitfn 0
       | Failure(x) ->
 	  Printf.fprintf stdout "Ignoring Uncaught Failure: %s\n" x; flush stdout;
-	  failure_delay()
+(**	  failure_delay() **)
       | BannedPeer -> Printf.fprintf stdout "Banned Peer"
       | exn -> (*** unexpected ***)
 	  Printf.fprintf stdout "Ignoring Uncaught Exception: %s\n" (Printexc.to_string exn); flush stdout;
-	  failure_delay()
+(**	  failure_delay() **)
     done
   in
   let daemon_readevalloop () =
@@ -6654,10 +7417,10 @@ let main () =
 	  !exitfn 0
       | Failure(x) ->
 	  log_string (Printf.sprintf "Ignoring Uncaught Failure: %s\n" x);
-	  failure_delay()
+(**	  failure_delay() **)
       | exn -> (*** unexpected ***)
 	  log_string (Printf.sprintf "Ignoring Uncaught Exception: %s\n" (Printexc.to_string exn));
-	  failure_delay()
+(**	  failure_delay() **)
     done
   in
   if !Config.daemon then
@@ -6672,15 +7435,19 @@ let main () =
       match Unix.fork() with
       | 0 ->
 	  initialize();
-          init_explorer_tables ();
-          refresh_explorer_tables ();
+          if !Config.explorer then
+            begin
+              init_explorer_tables ();
+              refresh_explorer_tables ();
+            end;
 	  if not !Config.offline then
 	    begin
 	      initnetwork !Utils.log;
 	      if !Config.staking then stkth := Some(Thread.create stakingthread ());
 	      if !Config.swapping then swpth := Some(Thread.create swappingthread ());
 	      if not !Config.ltcoffline then ltc_listener_th := Some(Thread.create ltc_listener ());
-              ignore (Thread.create refresh_explorer_tables_sometimes ());
+              if !Config.explorer then ignore (Thread.create refresh_explorer_tables_sometimes ());
+              ignore (Thread.create resend_txpool_sometimes ());
 	    end;
 	  daemon_readevalloop ()
       | pid -> Printf.printf "Proofgold daemon process %d started.\n" pid
@@ -6688,8 +7455,11 @@ let main () =
   else
     begin
       initialize();
-      init_explorer_tables ();
-      refresh_explorer_tables ();
+      if !Config.explorer then
+        begin
+          init_explorer_tables ();
+          refresh_explorer_tables ();
+        end;
       set_signal_handlers();
       if not !Config.offline then
 	begin
@@ -6697,7 +7467,8 @@ let main () =
 	  if !Config.staking then stkth := Some(Thread.create stakingthread ());
 	  if !Config.swapping then swpth := Some(Thread.create swappingthread ());
 	  if not !Config.ltcoffline then ltc_listener_th := Some(Thread.create ltc_listener ());
-          ignore (Thread.create refresh_explorer_tables_sometimes ());
+          if !Config.explorer then ignore (Thread.create refresh_explorer_tables_sometimes ());
+          ignore (Thread.create resend_txpool_sometimes ());
 	end;
       readevalloop()
     end;;

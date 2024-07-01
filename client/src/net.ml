@@ -885,7 +885,7 @@ let handle_msg replyto mt sin sout cs mh m =
 		      find_and_send_requestmissingblocks cs;
 		    end
 		  else
-		    raise (ProtocolViolation "Handshake failed")
+		    raise (ProtocolViolation (Printf.sprintf "Handshake failed %d" cs.handshakestep))
 	      end
 	  | Verack ->
 	      begin
@@ -974,7 +974,7 @@ let handle_msg replyto mt sin sout cs mh m =
 	  | _ -> log_string (Printf.sprintf "No handler found for message type %s." (string_of_msgtype mt))
 
 let connlistener (s,sin,sout,gcs) =
-  log_string (Printf.sprintf "connlistener thread %d begin %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+  log_string (Printf.sprintf "connlistener begin %f\n" (Unix.gettimeofday()));
   let connlistener_end cs =
     cs.sendershouldclose <- true;
     Condition.signal cs.sendqueuenonempty; (* signal the connsender so it knows to die *)
@@ -992,7 +992,7 @@ let connlistener (s,sin,sout,gcs) =
          end
       | _ -> ()
     end;
-    log_string (Printf.sprintf "connlistener thread %d exit %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+    log_string (Printf.sprintf "connlistener exit %f\n" (Unix.gettimeofday()));
     Thread.exit ()
   in
   try
@@ -1030,7 +1030,7 @@ let connlistener (s,sin,sout,gcs) =
 	        log_string (Printf.sprintf "Ill formed message by connection %s in connlistener\nClosing connection\n" (peeraddr !gcs));
                 connlistener_end cs
              | SelfConnection -> (*** detected a self-connection attempt, close ***)
-	        log_string (Printf.sprintf "Stopping potential self-connection in connlistener\n");
+                (*	        log_string (Printf.sprintf "Stopping potential self-connection in connlistener\n"); *)
                 connlistener_end cs
              | DupConnection -> (*** detected a duplicate connection attempt, close ***)
 	        log_string (Printf.sprintf "Stopping potential duplicate connection in connlistener\n");
@@ -1070,12 +1070,12 @@ let connlistener (s,sin,sout,gcs) =
     connlistener_end_2 ()
 
 let connsender (s,sin,sout,gcs) =
-  log_string (Printf.sprintf "connsender thread %d begin %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+  log_string (Printf.sprintf "connsender begin %f\n" (Unix.gettimeofday()));
   match !gcs with
   | None ->
      log_string (Printf.sprintf "connsender was called without gcs being set to a connection state already.\nThis should never happen.\nKilling connection immediately.\n");
      shutdown_close s;
-     log_string (Printf.sprintf "connsender thread %d exit %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+     log_string (Printf.sprintf "connsender exit %f\n" (Unix.gettimeofday()));
      Thread.exit ()
   | Some(cs) ->
      let connsender_end () =
@@ -1083,7 +1083,7 @@ let connsender (s,sin,sout,gcs) =
 	 Mutex.unlock cs.connmutex;
 	 gcs := None;
 	 shutdown_close s;
-         log_string (Printf.sprintf "connsender thread %d exit %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+         log_string (Printf.sprintf "connsender exit %f\n" (Unix.gettimeofday()));
          Thread.exit ()
        with _ ->
         Thread.exit ()
@@ -1115,7 +1115,7 @@ let connsender (s,sin,sout,gcs) =
 	 log_string (Printf.sprintf "Protocol violation by connection sender %s: %s\nClosing connection\n" (peeraddr !gcs) x);
 	 connsender_end()
       | SelfConnection -> (*** detected a self-connection attempt, close ***)
-	 log_string (Printf.sprintf "Stopping potential self-connection in connection sender\n");
+         (*	 log_string (Printf.sprintf "Stopping potential self-connection in connection sender\n"); *)
 	 connsender_end()
       | Sys_error(str) ->
 	 log_string (Printf.sprintf "Stopping connection sender for %s due to Sys_error %s" (peeraddr !gcs) str);
@@ -1293,11 +1293,11 @@ let tryconnectpeer n =
     None
 
 let netlistener l =
-  log_string (Printf.sprintf "netlistener thread %d begin %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+  log_string (Printf.sprintf "netlistener begin %f\n" (Unix.gettimeofday()));
   while true do
     try
       Thread.delay 10.0;
-      log_string (Printf.sprintf "netlistener thread %d waiting to accept %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+      log_string (Printf.sprintf "netlistener thread waiting to accept %f\n" (Unix.gettimeofday()));
       let (s,a) = Unix.accept l in
       let ra =
 	begin
@@ -1318,10 +1318,10 @@ let netlistener l =
   done
 
 let onionlistener l =
-  log_string (Printf.sprintf "onionlistener thread %d begin %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+  log_string (Printf.sprintf "onionlistener thread begin %f\n" (Unix.gettimeofday()));
   while true do
     try
-      log_string (Printf.sprintf "onionlistener thread %d waiting to accept %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+      log_string (Printf.sprintf "onionlistener waiting to accept %f\n" (Unix.gettimeofday()));
       let (s,a) = Unix.accept l in
       let ra =
 	begin
@@ -1401,7 +1401,7 @@ let netseeker_loop () =
     | BannedPeer -> Thread.delay 60.
     | EnoughConnections -> Thread.delay 600.
     | exn ->
-       log_string (Printf.sprintf "netseeker_loop thread %d exception %s\n" (Thread.id (Thread.self())) (Printexc.to_string exn));
+       log_string (Printf.sprintf "netseeker_loop exception %s\n" (Printexc.to_string exn));
        Thread.delay 60.
   done
 

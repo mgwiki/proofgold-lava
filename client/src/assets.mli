@@ -120,33 +120,56 @@ val obligation_from_json : jsonval option -> obligation
 val preasset_from_json : jsonval -> preasset
 val asset_from_json : jsonval -> asset
 
+val tx_count_recompute : int ref
+val addr_count_recompute : int ref
+val tx_count : int ref
+val addr_count : int ref
 val asset_id_hash_history : (hashval,hashval * hashval * hashval * hashval option) Hashtbl.t
 val asset_id_hash_refreshing : bool ref
 val asset_id_hash_table_bkp : (hashval,hashval * hashval * hashval option) Hashtbl.t
 val asset_id_hash_table : (hashval,hashval * hashval * hashval option) Hashtbl.t
+val addr_contents_history_table : (hashval,(addr * asset)) Hashtbl.t
+val addr_contents_table_bkp : (addr, asset) Hashtbl.t
+val addr_contents_table : (addr,asset) Hashtbl.t
+val block_txcount_history_table : (hashval,int) Hashtbl.t
+val blockheight_history_table : (hashval,int64) Hashtbl.t
 val spent_table_refreshing : bool ref
-val spent_table_bkp : (hashval,(hashval * hashval * hashval option)) Hashtbl.t
-val spent_table : (hashval,(hashval * hashval * hashval option)) Hashtbl.t
+val spent_table_bkp : (hashval,(hashval * hashval * hashval option * int64)) Hashtbl.t
+val spent_table : (hashval,(hashval * hashval * hashval option * int64)) Hashtbl.t
 val spent_history_table : (hashval,((hashval * hashval * hashval option) list * hashval option)) Hashtbl.t
 val bounty_sorted_refreshing : bool ref
-val bounty_sorted_bkp : (addr * hashval * int64 * hashval * hashval option) list ref
-val bounty_sorted : (addr * hashval * int64 * hashval * hashval option) list ref
-val bounty_history_table : (hashval,(addr * hashval * int64 * hashval * hashval option)) Hashtbl.t
+val bounty_sorted_bkp : (int64 * addr * hashval * int64 * hashval * hashval option) list ref
+val bounty_sorted : (int64 * addr * hashval * int64 * hashval * hashval option) list ref
+val placed_bounty_sorted : (int64 * addr * hashval * int64 * hashval * hashval option) list ref
+val collected_bounty_sorted : (int64 * hashval * hashval option * int64 * addr * hashval * int64 * hashval * hashval option) list ref
+val sig_table_bkp : (addr, (payaddr * hashval option * hashval)) Hashtbl.t
+val doc_table_bkp : (addr, (payaddr * hashval option * hashval)) Hashtbl.t
+val sig_table : (addr, (payaddr * hashval option * hashval)) Hashtbl.t
+val doc_table : (addr, (payaddr * hashval option * hashval)) Hashtbl.t
+val sig_history_table : (hashval, (addr * payaddr * hashval option * hashval)) Hashtbl.t
+val doc_history_table : (hashval, (addr * payaddr * hashval option * hashval)) Hashtbl.t
+val bounty_sum : int64 ref
+val open_bounty_sum : int64 ref
+val bounty_history_table : (hashval,(int64 * addr * hashval * int64 * hashval * hashval option)) Hashtbl.t
+val theory_history_table : (hashval,(hashval * hashval * addr * payaddr)) Hashtbl.t
+val theory_info : (hashval, hashval * addr * payaddr) Hashtbl.t
+val theory_info_bkp : (hashval, hashval * addr * payaddr) Hashtbl.t
 val term_info_refreshing : bool ref
-val term_info_bkp : (hashval,trm * hashval * hashval option * hashval * hashval option) Hashtbl.t
-val term_info : (hashval,trm * hashval * hashval option * hashval * hashval option) Hashtbl.t
+val term_info_bkp : (hashval,trm * hashval * hashval option * hashval * hashval option * bool * hashval) Hashtbl.t
+val term_info : (hashval,trm * hashval * hashval option * hashval * hashval option * bool * hashval) Hashtbl.t
 val term_info_hf : (hashval,trm) Hashtbl.t
-val obj_info_bkp : (hashval,hashval option * stp * hashval * bool) Hashtbl.t
-val obj_info : (hashval,hashval option * stp * hashval * bool) Hashtbl.t
-val obj_info_hf : (hashval,stp * hashval) Hashtbl.t
-val prop_info_bkp : (hashval,hashval option * hashval * bool) Hashtbl.t
-val prop_info : (hashval,hashval option * hashval * bool) Hashtbl.t
-val prop_info_hf : (hashval,hashval) Hashtbl.t
+val obj_info_bkp : (hashval,hashval option * stp * hashval * trm * bool * addr) Hashtbl.t
+val obj_info : (hashval,hashval option * stp * hashval * trm * bool * addr) Hashtbl.t
+val obj_info_hf : (hashval,stp * hashval * trm) Hashtbl.t
+val prop_info_bkp : (hashval,hashval option * hashval * trm * bool * addr) Hashtbl.t
+val prop_info : (hashval,hashval option * hashval * trm * bool * addr) Hashtbl.t
+val prop_info_hf : (hashval,hashval * trm) Hashtbl.t
 val negprop_info_bkp : (hashval,hashval option * hashval * bool) Hashtbl.t
 val negprop_info : (hashval,hashval option * hashval * bool) Hashtbl.t
-val term_history_table : (hashval,hashval * trm * hashval * hashval option * hashval * hashval option) Hashtbl.t
-val obj_history_table : (hashval,hashval * hashval option * stp * hashval * bool) Hashtbl.t
-val prop_history_table : (hashval,hashval * hashval option * hashval * bool) Hashtbl.t
+val term_history_table : (hashval,hashval * trm * hashval * hashval option * hashval * hashval option * bool * hashval) Hashtbl.t
+val term_history_table : (hashval,hashval * trm * hashval * hashval option * hashval * hashval option * bool * hashval) Hashtbl.t
+val obj_history_table : (hashval,hashval * hashval option * stp * hashval * trm * bool * addr) Hashtbl.t
+val prop_history_table : (hashval,hashval * hashval option * hashval * trm * bool * addr) Hashtbl.t
 val ownsobj_history_table : (hashval,hashval * hashval * int64 * payaddr * payaddr * int64 option) Hashtbl.t
 val ownsprop_history_table : (hashval,hashval * hashval * int64 * payaddr * payaddr * int64 option) Hashtbl.t
 val ownsnegprop_history_table : (hashval,addr * hashval * int64 * payaddr) Hashtbl.t

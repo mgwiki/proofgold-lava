@@ -98,3 +98,14 @@ let shift_left_big_int x y =
 let shift_right_towards_zero_big_int x y =
   let r = Z.shift_right_trunc x y in
   r
+
+let rec loclist_to_code l =
+  match l with
+  | [] -> (0,zero_big_int)
+  | None::r ->
+     let (n,c) = loclist_to_code r in
+     (n+1,c)
+  | Some(b)::r ->
+     let (n,c) = loclist_to_code r in
+     let c2 = shift_left_big_int c 1 in
+     (n+1,(if b then or_big_int unit_big_int c2 else c2))

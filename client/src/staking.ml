@@ -265,7 +265,7 @@ let compute_staking_chances (prevblkh,lbk,ltx) fromtm totm =
 	        | _ -> ())
 	    !Commands.walletendorsements;
           log_string (Printf.sprintf "%d staking assets\n" (List.length !Commands.stakingassets));
-          let lul = ltc_listunspent () in
+          let lul = ltc2_listunspent () in
           if not (!Commands.stakingassets = []) || not (lul = []) then
 	    let nextstake i stkaddr h bday obl v toburn =
 	      Hashtbl.add nextstakechances (lbk,ltx) (NextStake(i,stkaddr,h,bday,obl,v,toburn,ref None,thyroot,thytree,sigroot,sigtree));
@@ -393,7 +393,7 @@ let compute_genesis_staking_chances fromtm totm =
   if !Config.maxburn <= 0L then (*** if must burn but not willing to burn, don't bother computing next staking chances ***)
     ()
   else
-    let lul = ltc_listunspent () in
+    let lul = ltc2_listunspent () in
     if lul = [] then
       ()
     else
@@ -480,7 +480,7 @@ exception SyncIssue;;
  The staking code underwent a major rewrite in March 2019.
  ***)
 let stakingthread () =
-  log_string (Printf.sprintf "stakingthread thread %d begin %f\n" (Thread.id (Thread.self())) (Unix.gettimeofday()));
+  log_string (Printf.sprintf "stakingthread begin %f\n" (Unix.gettimeofday()));
   let sleepuntil = ref (ltc_medtime()) in
   let pending = ref None in
   while true do
@@ -489,7 +489,7 @@ let stakingthread () =
       let sleeplen = Int64.to_float (Int64.sub !sleepuntil nw) in
 (*      log_string (Printf.sprintf "Staking sleeplen %f seconds\n" sleeplen); *)
       if sleeplen > 1.0 then Thread.delay sleeplen;
-(*      log_string (Printf.sprintf "Staking after sleeplen %f seconds thread %d\n" sleeplen (Thread.id (Thread.self()))); *)
+(*      log_string (Printf.sprintf "Staking after sleeplen %f seconds\n" sleeplen); *)
       if not (ltc_synced()) then (log_string (Printf.sprintf "ltc not synced yet; delaying staking\n"); raise (StakingPause(60.0)));
       pendingltctxs := List.filter (fun h -> ltc_tx_confirmed h = None) !pendingltctxs;
       if not (!pendingltctxs = []) then (log_string (Printf.sprintf "there are pending ltc txs; delaying staking\n"); raise (StakingPause(60.0)));

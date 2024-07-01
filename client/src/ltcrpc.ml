@@ -20,6 +20,7 @@ let knownbootstrapurl : (string,unit) Hashtbl.t = Hashtbl.create 10
 let ignorebootstrapurl : (string,unit) Hashtbl.t = Hashtbl.create 10
 let bootstrapurls : string list ref = ref []
 let ltcrpcauthstr : string option ref = ref None
+let ltcrpcauthstr2 : string option ref = ref None
 
 let ltcrpcauth () =
   match !ltcrpcauthstr with
@@ -28,6 +29,15 @@ let ltcrpcauth () =
      let userpass = !Config.ltcrpcuser ^ ":" ^ !Config.ltcrpcpass in
      let s = Utils.base64encode (string_bytelist userpass) in
      ltcrpcauthstr := Some(s);
+     s
+
+let ltcrpcauth2 () =
+  match !ltcrpcauthstr2 with
+  | Some(s) -> s
+  | None ->
+     let userpass = !Config.ltcrpcuser2 ^ ":" ^ !Config.ltcrpcpass2 in
+     let s = Utils.base64encode (string_bytelist userpass) in
+     ltcrpcauthstr2 := Some(s);
      s
 
 let ltcrpc_connect () =
@@ -100,6 +110,84 @@ let ltcrpc_connect () =
        Printf.fprintf sout "POST / HTTP/1.1\n";
        Printf.fprintf sout "Host: %s:%d\n" !Config.ltcrpcip !Config.ltcrpcport;
        Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth());
+       Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
+       Printf.fprintf sout "Accept: */*\n";
+       Printf.fprintf sout "content-type: text/plain;\n";
+       (s,sin,sout)
+     with exn ->
+           Unix.close s;
+           raise exn
+
+let ltcrpc2_connect () =
+  match !Config.ltcrpconion2 with
+  | Some(onionaddr) ->
+     begin
+       let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+       try
+         Unix.connect s (Unix.ADDR_INET(Unix.inet_addr_loopback, !Config.socksport));
+         let sin = Unix.in_channel_of_descr s in
+         let sout = Unix.out_channel_of_descr s in
+         set_binary_mode_in sin true;
+         set_binary_mode_out sout true;
+         output_byte sout 4;
+         output_byte sout 1;
+         (** port, big endian **)
+         output_byte sout ((!Config.ltcrpcport2 asr 8) land 255);
+         output_byte sout (!Config.ltcrpcport2 land 255);
+         (** fake ip for socks4a **)
+         output_byte sout 0;
+         output_byte sout 0;
+         output_byte sout 0;
+         output_byte sout 1;
+         output_byte sout 0; (** empty string **)
+         (** onion addr **)
+         for i = 0 to String.length onionaddr - 1 do
+           output_byte sout (Char.code onionaddr.[i])
+         done;
+         output_byte sout 0; (** terminate string **)
+         flush sout;
+         try
+           let by = input_byte sin in
+           if not (by = 0) then raise (Failure "server did not give initial null byte");
+           let by = input_byte sin in
+           if by = 0x5b then raise (Failure "request rejected or failed");
+           if by = 0x5c then raise (Failure "request failed because client is not running identd (or not reachable from the server)");
+           if by = 0x5d then raise (Failure "request failed because client's identd could not confirm the user ID string in the request");
+           if not (by = 0x5a) then raise (Failure "bad status byte from server");
+           let rport1 = input_byte sin in
+           let rport0 = input_byte sin in
+           let rport = rport1 * 256 + rport0 in
+           let _ (* ip0 *) = input_byte sin in
+           let _ (* ip1 *) = input_byte sin in
+           let _ (* ip2 *) = input_byte sin in
+           let _ (* ip3 *) = input_byte sin in
+           Printf.fprintf sout "POST / HTTP/1.1\n";
+           Printf.fprintf sout "Host: %s:%d\n" onionaddr rport;
+           Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth2());
+           Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
+           Printf.fprintf sout "Accept: */*\n";
+           Printf.fprintf sout "content-type: text/plain;\n";
+           (s,sin,sout)
+         with e ->
+           Unix.close s;
+           Utils.log_string (Printf.sprintf "Failed to connect to %s:%d : %s\n" onionaddr !Config.ltcrpcport2 (Printexc.to_string e));
+           raise Exit
+       with exn ->
+         Unix.close s;
+         raise exn         
+     end
+  | None ->
+     let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+     try
+       let ia = Unix.inet_addr_of_string !Config.ltcrpcip2 in
+       Unix.connect s (Unix.ADDR_INET(ia, !Config.ltcrpcport2));
+       let sin = Unix.in_channel_of_descr s in
+       let sout = Unix.out_channel_of_descr s in
+       set_binary_mode_in sin true;
+       set_binary_mode_out sout true;
+       Printf.fprintf sout "POST / HTTP/1.1\n";
+       Printf.fprintf sout "Host: %s:%d\n" !Config.ltcrpcip2 !Config.ltcrpcport2;
+       Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth2());
        Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
        Printf.fprintf sout "Accept: */*\n";
        Printf.fprintf sout "content-type: text/plain;\n";
@@ -202,6 +290,13 @@ let ltcrpc_url () =
       "http://" ^ o ^ ":" ^ (string_of_int !Config.ltcrpcport) ^ "/"
   | None ->
       "http://" ^ !Config.ltcrpcip ^ ":" ^ (string_of_int !Config.ltcrpcport) ^ "/"
+
+let ltcrpc2_url () =
+  match !Config.ltcrpconion2 with
+  | Some(o) ->
+      "http://" ^ o ^ ":" ^ (string_of_int !Config.ltcrpcport2) ^ "/"
+  | None ->
+      "http://" ^ !Config.ltcrpcip2 ^ ":" ^ (string_of_int !Config.ltcrpcport2) ^ "/"
 
 let seo_ltcpfgstatus o s c =
   match s with
@@ -600,7 +695,100 @@ let ltc_listunspent_gen addrl =
     raise Not_found
 
 let ltc_listunspent () = ltc_listunspent_gen !Config.ltcaddresses
-      
+
+let ltc2_listunspent_gen addrl =
+  try
+    let l =
+      if !Config.ltcoffline then
+	begin
+	  Printf.printf "call listunspent in ltc\n>> "; flush stdout;
+	  read_line()
+	end
+      else
+        begin
+	  let addrlb = Buffer.create 40 in
+	  let fstaddr = ref true in
+	  List.iter
+	    (fun a ->
+	      if !fstaddr then fstaddr := false else Buffer.add_char addrlb ',';
+	      Buffer.add_char addrlb '"';
+	      Buffer.add_string addrlb a;
+	      Buffer.add_char addrlb '"')
+            addrl;
+          let call = "{\"jsonrpc\": \"1.0\", \"id\":\"lu\", \"method\": \"listunspent\", \"params\": [1,9999999,[" ^ (Buffer.contents addrlb) ^ "]] }" in
+          try
+            if !Config.ltcrpcavoidcurl then
+              begin
+                let (s,sin,sout) = ltcrpc2_connect () in
+                Printf.fprintf sout "Content-Length: %d\n\n" (String.length call);
+                Printf.fprintf sout "%s\n" call;
+                flush sout;
+                skip_to_blankline sin;
+                let l = input_line sin in
+                shutdown_close s;
+                l
+              end
+            else
+              raise Exit
+          with Exit -> (* fall back on curl *)
+	    let userpass = !Config.ltcrpcuser2 ^ ":" ^ !Config.ltcrpcpass2 in
+	    let url = ltcrpc2_url() in
+            let fullcall = !Config.curl ^ " --user " ^ userpass ^ " --data-binary '" ^ call ^ "' -H 'content-type: text/plain;' " ^ url in
+	    let (inc,outc,errc) = Unix.open_process_full fullcall [| |] in
+	    let l = input_line inc in
+	    ignore (Unix.close_process_full (inc,outc,errc));
+	    l
+        end
+    in
+    let utxol = ref [] in
+    match parse_jsonval l with
+    | (JsonObj(al),_) ->
+	begin
+	  match List.assoc "result" al with
+	  | JsonArr(ul) ->
+	      begin
+		List.iter
+		  (fun u ->
+		    match u with
+		    | JsonObj(bl) ->
+			begin
+			  try
+			    let ltcaddr = json_assoc_string "address" bl in
+			    if ltcaddr = "" then raise Not_found;
+			    if ltcaddr.[0] = 'M' || (!Config.testnet && ltcaddr.[0] = 'Q') then (*** p2sh segwit ***)
+			      let txh = json_assoc_string "txid" bl in
+			      let vout = json_assoc_int "vout" bl in
+			      let rs = json_assoc_string "redeemScript" bl in
+			      let spk = json_assoc_string "scriptPubKey" bl in
+			      let amt = json_assoc_litoshis "amount" bl in
+			      utxol := LtcP2shSegwit(txh,vout,ltcaddr,rs,spk,amt)::!utxol
+			    else if ltcaddr.[0] = 'l' || (!Config.testnet && ltcaddr.[0] = 't') then (*** bech32 ***)
+			      let txh = json_assoc_string "txid" bl in
+			      let vout = json_assoc_int "vout" bl in
+			      let spk = json_assoc_string "scriptPubKey" bl in
+			      let amt = json_assoc_litoshis "amount" bl in
+			      utxol := LtcBech32(txh,vout,ltcaddr,spk,amt)::!utxol
+			    else
+			      raise Not_found
+			  with Not_found ->
+			    ()
+			end
+		    | _ -> ())
+		  ul;
+		!utxol
+	      end
+	  | _ ->
+	      (Utils.log_string (Printf.sprintf "problem return from ltc listunspent:\n%s\n" l));
+	      raise Not_found
+	end
+    | _ ->
+	(Utils.log_string (Printf.sprintf "problem return from ltc listunspent:\n%s\n" l));
+	raise Not_found
+  with _ ->
+    raise Not_found
+
+let ltc2_listunspent () = ltc2_listunspent_gen !Config.ltcaddresses
+
 exception InsufficientLtcFunds
 
 let le_num24 x =
@@ -753,7 +941,7 @@ let ltc_createburntx_spec u h1 h2 toburn =
 	 Buffer.add_char txs1b '\000')
        
 let ltc_createburntx h1 h2 toburn =
-  let utxol = ltc_listunspent () in
+  let utxol = ltc2_listunspent () in
   let toburn_plus_fee = Int64.add toburn !Config.ltctxfee in
   try
     Hashtbl.find burntx h2
@@ -790,7 +978,7 @@ let ltc_signrawtransaction txs =
           try
             if !Config.ltcrpcavoidcurl then
               begin
-                let (s,sin,sout) = ltcrpc_connect () in
+                let (s,sin,sout) = ltcrpc2_connect () in
                 Printf.fprintf sout "Content-Length: %d\n\n" (String.length call);
                 Printf.fprintf sout "%s\n" call;
                 flush sout;
@@ -802,8 +990,8 @@ let ltc_signrawtransaction txs =
             else
               raise Exit
           with Exit -> (* fall back on curl *)
-	    let userpass = !Config.ltcrpcuser ^ ":" ^ !Config.ltcrpcpass in
-	    let url = ltcrpc_url() in
+	    let userpass = !Config.ltcrpcuser2 ^ ":" ^ !Config.ltcrpcpass2 in
+	    let url = ltcrpc2_url() in
 	    let fullcall = !Config.curl ^ " --user " ^ userpass ^ " --data-binary '" ^ call ^ "' -H 'content-type: text/plain;' " ^ url in
 	    let (inc,outc,errc) = Unix.open_process_full fullcall [| |] in
 	    let l = input_line inc in
@@ -1584,7 +1772,7 @@ let ltc_createswapoffertx_spec u pbeta litoshis atoms =
 	 Buffer.add_char txs1b '\000')
        
 let ltc_createswapoffertx pbeta litoshis atoms =
-  let utxol = ltc_listunspent_gen !Config.ltctradeaddresses in
+  let utxol = ltc2_listunspent_gen !Config.ltctradeaddresses in
   let minamt_plus_fee = Int64.add litoshis !Config.ltctxfee in
   if not (p2pkhaddr_p pbeta) then raise (Failure "Proofgold address for swap must be p2pkh");
   try
@@ -1943,7 +2131,7 @@ let ltc_createalerttx_spec u k msg =
 	 Buffer.add_char txs1b '\000')
 
 let rec broadcast_alert_via_ltc k msg =
-  let utxol = ltc_listunspent () in
+  let utxol = ltc2_listunspent () in
   let toburn_plus_fee = !Config.ltctxfee in
   try
     (Utils.log_string (Printf.sprintf "Searching for an unspent litecoin tx with at least %Ld litoshis.\n" toburn_plus_fee));
