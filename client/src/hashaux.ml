@@ -6,6 +6,7 @@
 
 open Zarithint
 
+(* Convert a hexit (4-bit integer) to its corresponding hexadecimal character *)
 let hexchar i =
   match i with
   | 0 -> '0'
@@ -26,6 +27,7 @@ let hexchar i =
   | 15 -> 'f'
   | _ -> raise (Failure("Not a hexit"))
 
+(* Convert a hexadecimal character to its corresponding hexit (4-bit integer) *)
 let hexchar_inv x =
   match x with
   | '0' -> 0l
@@ -52,12 +54,14 @@ let hexchar_inv x =
   | 'f' -> 15l
   | _ -> raise (Failure("not a hexit: " ^ (string_of_int (Char.code x))))
 
+(* Convert an 8-bit integer at a given position in a hexadecimal string to its integer value *)
 let hexsubstring_int8 h i =
   Int32.to_int
     (Int32.logor
        (Int32.shift_left (hexchar_inv h.[i]) 4)
        (hexchar_inv h.[i+1]))
 
+(* Convert a hexadecimal string to its corresponding string *)
 let hexstring_string s =
   let l = String.length s in
   let l2 = l/2 in
@@ -69,6 +73,7 @@ let hexstring_string s =
   done;
   Buffer.contents strb
 
+(* Convert a string to its corresponding hexadecimal string *)
 let string_hexstring s =
   let l = String.length s in
   let l2 = l*2 in
@@ -80,6 +85,7 @@ let string_hexstring s =
   done;
   Buffer.contents strb
 
+(* Convert a string to a list of bytes *)
 let string_bytelist s =
   let l = ref [] in
   for i = (String.length s) - 1 downto 0 do
@@ -87,6 +93,7 @@ let string_bytelist s =
   done;
   !l
 
+(* Convert a 32-bit integer at a given position in a hexadecimal string to its integer value *)
 let hexsubstring_int32 h i =
   Int32.logor (Int32.shift_left (hexchar_inv h.[i]) 28)
     (Int32.logor (Int32.shift_left (hexchar_inv h.[i+1]) 24)
@@ -97,21 +104,26 @@ let hexsubstring_int32 h i =
 		   (Int32.logor (Int32.shift_left (hexchar_inv h.[i+6]) 4)
 		      (hexchar_inv h.[i+7])))))))
   
+(* Convert a 32-bit integer to its corresponding hexadecimal string *)
 let int32_hexstring b x =
   Buffer.add_string b (Bebits.to_hexstring (Bebits.of_int32 x))
 
+(* Define a constant big integer with the value 65535 *)
 let z65535 = big_int_of_int 65535
 
+(* Subtract an integer from a big integer at a given bit position *)
 let big_int_sub_int32 x i =
   Int32.logor
     (Int32.shift_left (int32_of_big_int (and_big_int (shift_right_towards_zero_big_int x (i+16)) z65535)) 16)
     (int32_of_big_int (and_big_int (shift_right_towards_zero_big_int x i) z65535))
 
+(* Convert a big integer to a 32-bit integer at a given bit position *)
 let int32_big_int_bits x i =
   or_big_int
     (shift_left_big_int (big_int_of_int32 (Int32.shift_right_logical x 16)) (i+16))
     (shift_left_big_int (big_int_of_int32 (Int32.logand x 65535l)) i)
 
+(* Reverse the byte order of a 32-bit integer *)
 let int32_rev x =
   Int32.logor
     (Int32.shift_left (Int32.logand x 0xffl) 24)
@@ -121,6 +133,7 @@ let int32_rev x =
 	  (Int32.shift_left (Int32.logand (Int32.shift_right_logical x 16) 0xffl) 8)
 	  (Int32.logand (Int32.shift_right_logical x 24) 0xffl)))
 
+(* Convert a big integer to its corresponding hexadecimal string with a given number of digits *)
 let hexstring_of_big_int x n =
   let xr = ref x in
   let r = ref "" in
@@ -130,6 +143,7 @@ let hexstring_of_big_int x n =
   done;
   !r
 
+(* Convert a hexadecimal string to its corresponding big integer *)
 let big_int_of_hexstring s =
   let r = ref zero_big_int in
   for i = 0 to String.length s - 1 do

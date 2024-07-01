@@ -8,7 +8,7 @@ $json = pgj("querybestblock");
 <h1>Proofgold explorer</h1>
 <table><tr>
   <td><table><tr><th><h4><a href="bounties.php">Bounties</a>: 9190</a> worth 278'234 PG</h4></th></tr><tr><td><div id="chart"></div></td></tr></table></td>
-<td><table><tr><th><h4>Last Claimed</h4></th></tr><tr><td>
+<td><table><tr><th><h4>Recent Claimed</h4></th></tr><tr><td>
  <div style="height: 300px;"><div align="left"><pre>
 <?php include 'i/mockthm.php'; ?>
   </pre></div>
@@ -26,6 +26,9 @@ $json = pgj("querybestblock");
     <td><table><tr><th>Blocks</th></tr><tr><td><?= ahrefblock($json->height) ?></td></tr></table></td>
     <td><table><tr><th>Circulation</th></tr><tr><td><?= 5000 * 50 + ($json->height - 5000) * 25 ?></td></tr></table></td>
   </tr><tr>
+    <td><table><tr><th>Addresses</th></tr><tr><td><?= $json->numaddresses ?></td></tr></table></td>
+    <td><table><tr><th>Transactions</th></tr><tr><td><?= $json->numtxs ?></td></tr></table></td>
+  </tr><tr>
     <td><table><tr><th><a href="map.php">Recent Connections</a> (Currently <?= strtok(pgopen("getpeerinfo"),"\n") ?>)</th></tr><tr><td><a href="map.php"><img src="map.jpg"/></a> </td></tr></table></td>
 <!--    <td><table><tr><th>Addresses</th></tr><tr><td></td></tr></table></td>-->
     <td><table><tr><th>Genesis</th></tr><tr><td>June 2020: <?= ahrefblock(1) ?></td></tr></table></td>
@@ -38,6 +41,7 @@ $json = pgj("querybestblock");
 <!--  <td><table><tr><th>Recent</th></tr><tr><td><a href="msg.php">Messages</a></td></tr></table></td>
   <td><table><tr><th>Recent</th></tr><tr><td><a href="listen.php">Listeners</a></td></tr></table></td>-->
   <td><table><tr><th>All</th></tr><tr><td><a href="theories.php">Theories</a></td></tr></table></td>
+  <td><table><tr><th>Recent</th></tr><tr><td><a href="recentbounties.php">Bounties</a></td></tr></table></td>-->
    </tr>
 </table>
 
@@ -55,7 +59,7 @@ $json = pgj("querybestblock");
 </table>
 -->
 
-<table><tr><td>Documentation and Clients: <a href="https://prfgld.github.io/">Original Proofgold</a>; <a href="https://github.com/dalcoder/proofgoldlite">ProofGoldLite</a>; <a href="proofgold.net">ProofGold Lava</a></td></tr></table>
+<table><tr><td>Documentation and Clients: <a href="https://prfgld.github.io/">Original Proofgold</a>; <a href="https://github.com/dalcoder/proofgoldlite">ProofGoldLite</a>; <a href="http://proofgold.net/">ProofGold Lava</a></td></tr></table>
 
 <!--
 <h3>Buy Offers</h3>

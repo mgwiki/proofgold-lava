@@ -21,11 +21,11 @@ function pgport($fnctn, $port, $loginpass) {
 }
 
 function pg($fnctn) {
-    return pgport($fnctn, 21810, "Z-f9awzkEuVHWvqv\ncxuPnFJfYq+MmeaK");
+    return pgport($fnctn, 21810, "password");
 }
 
 function pgopen($fnctn) {
-    return pgport($fnctn, 21818, "f9awzkEuVHWvqv-Z\nuPnFJfYq+MmeaKxc");
+    return pgport($fnctn, 21818, "password");
 }
 
 function pgj($fnctn) {
@@ -46,6 +46,10 @@ function ahrefblock($item) {
   return ("<a href=\"Bl.php?b=" . $item . "\">". $item . "</a>");
 }
 
+function ablock($id, $hei) {
+  return ("<a href=\"Bl.php?b=" . $id . "\">". $hei . "</a>");
+}
+
 function abbrv($item) {
   return ("<a href=\"q.php?b=" . $item . "\">" . substr($item, 0, 5) . "..</a>");
 }
@@ -58,12 +62,17 @@ function abbrvstx($item) {
   return ("<a href=\"STX.php?b=" . $item . "\">" . substr($item, 0, 5) . "..</a>");
 }
 
+function file_first_line($file) {
+    $lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    return isset($lines[0]) ? $lines[0] : "";
+}
+
 function mglinki($item, $els) {
-    return ((file_exists ("/home/cezary/mgw_test/etc/i/" . $item)) ? (file_get_contents("/home/cezary/mgw_test/etc/i/" . $item)) : $els);
+    return ((file_exists ("/home/anon/mgw_test/etc/i/" . $item)) ? (file_first_line("/home/anon/mgw_test/etc/i/" . $item)) : $els);
 }
 
 function mglinka($item, $els) {
-    return ((file_exists ("/home/cezary/mgw_test/etc/a/" . $item)) ? (file_get_contents("/home/cezary/mgw_test/etc/a/" . $item)) : $els);
+    return ((file_exists ("/home/anon/mgw_test/etc/a/" . $item)) ? (file_first_line("/home/anon/mgw_test/etc/a/" . $item)) : $els);
 }
 
 function abbrvaddr($item) {
@@ -101,25 +110,41 @@ function nameordefault ($hex, $defaultnames) {
       	 return (abbrvname($hex, $defaultnames[0]));
     }
 }
+
+function showbounty ($d) {
+    if (isset($d->propid)) {
+        echo nameordefault($d->propid, isset($d->defaultnames)?$d->defaultnames:[]);
+    } else if (isset($d->npropid)) {
+        echo nameordefault($d->npropid, $d->negdefaultnames);
+    } else {
+        echo abbrvaddr($d->bountyaddress);
+    }
+    echo " " . number_format($d->bountyvalue / 100000000000, 2) . "<br/>";
+}
+
+function anchor ($name) {
+    return '<a name="' . $name . '"/>';
+}
+
 function doc($dc) {
     if (!(isset ($dc->defaultnames))) {
         $dc->defaultnames = [];
     }
     $output = '';
     if($dc->docitemcase == 'docknown') {
-        $output .= "Known " . nameordefault($dc->propid,$dc->defaultnames) . " : ";
+        $output .= anchor($dc->propid) . "Known " . nameordefault($dc->propid,$dc->defaultnames) . " : ";
         $output .= ($dc->prop);
     } else if($dc->docitemcase == 'docdef') {
-        $output .= "Definition " . nameordefault($dc->objid,$dc->defaultnames) . " := ";
+        $output .= anchor($dc->objid) . "Definition " . nameordefault($dc->objid,$dc->defaultnames) . " := ";
         $output .= ($dc->def);
     } else if($dc->docitemcase == 'docpfof') {
-        $output .= "Theorem " . nameordefault($dc->propid,$dc->defaultnames) . " : ";
+        $output .= anchor($dc->propid) . "Theorem " . nameordefault($dc->propid,$dc->defaultnames) . " : ";
         $output .= ($dc->prop . " (proof not displayed)");
     } else if ($dc->docitemcase == 'docparam') {
-        $output .= "Param " . nameordefault($dc->objid,$dc->defaultnames) . " : ";
+        $output .= anchor($dc->objid) . "Param " . nameordefault($dc->objid,$dc->defaultnames) . " : ";
         $output .= ($dc->stp);
     } else  if($dc->docitemcase == 'docconj') {
-        $output .= "Conjecture " . nameordefault($dc->propid,$dc->defaultnames) . " : ";
+        $output .= anchor($dc->propid) . "Conjecture " . nameordefault($dc->propid,$dc->defaultnames) . " : ";
         $output .= ($dc->prop);
     } else {
         $output .= "Unknown Docitemcase ";

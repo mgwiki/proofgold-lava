@@ -37,7 +37,7 @@ if ($q == "") {
         echo "<h2>Unknown Response!</h2>" . $json->response;
     }
 } else {
-    if (($handle = fopen("/home/cezary/.proofgold/mglegenddefault", "r")) !== FALSE) {
+    if (($handle = fopen("/home/anon/.proofgold/mglegenddefault", "r")) !== FALSE) {
         while (($data = fgetcsv($handle, 1000, " ")) !== FALSE) {
             $num = count($data);
             if (count($data) == 3 && ($data[0] == "P" || $data[0] == "O")) {

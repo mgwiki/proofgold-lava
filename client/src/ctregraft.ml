@@ -9,18 +9,22 @@ open Assets
 open Tx
 open Ctre
 
+(* Define a type for a cgraft, which is a list of hash-tree pairs *)
 type cgraft = (hashval * ctree) list
 
+(* Check if a cgraft is valid by checking if the hash of each tree matches the corresponding hash in the cgraft *)
 let rec cgraft_valid g =
   match g with
   | [] -> true
   | (h,tr)::g' -> ctree_hashroot tr = h && cgraft_valid g'
 
+(* Find the tree in a cgraft that corresponds to a given hash *)
 let rec cgraft_assoc g k =
   match g with
   | [] -> CHash(k)
   | (h,tr)::g' -> if h = k then tr else cgraft_assoc g' k
 
+(* Replace the hashes in a ctree with the corresponding trees from a cgraft *)
 let rec ctree_cgraft g tr =
   match tr with
   | CHash(h) -> cgraft_assoc g h
@@ -29,58 +33,59 @@ let rec ctree_cgraft g tr =
   | CBin(tlr,trr) -> CBin(ctree_cgraft g tlr,ctree_cgraft g trr)
   | _ -> tr
 
+(* Recursively factor a ctree into a new ctree and a cgraft, based on the input and output lists and the full list of hashes needed *)
 let rec factor_ctree_cgraft n inpl outpl full c =
   if n > 0 then
     begin
       if inpl = [] && outpl = [] && full = [] then
-	begin
-	  match c with
-	  | CHash(_) -> (c,[]) (*** leave this implicit ***)
-	  | _ ->
-	      let ch = ctree_hashroot c in
-	      (CHash(ch),[(ch,c)])
-	end
+        begin
+          match c with
+          | CHash(_) -> (c,[]) (* leave this implicit *)
+          | _ ->
+              let ch = ctree_hashroot c in
+              (CHash(ch),[(ch,c)])
+        end
       else
-	begin
-	  match c with
-	  | CLeft(c0) ->
-	      let (c0a,g0) =
-		factor_ctree_cgraft (n-1)
-		  (strip_location_left inpl)
-		  (strip_location_left0 outpl)
-		  (strip_location_left0 full)
-		  c0
-	      in
-	      (CLeft(c0a),g0)
-	  | CRight(c1) ->
-	      let (c1a,g1) =
-		factor_ctree_cgraft (n-1)
-		  (strip_location_right inpl)
-		  (strip_location_right0 outpl)
-		  (strip_location_right0 full)
-		  c1
-	      in
-	      (CRight(c1a),g1)
-	  | CBin(c0,c1) ->
-	      let (c0a,g0) =
-		factor_ctree_cgraft (n-1)
-		  (strip_location_left inpl)
-		  (strip_location_left0 outpl)
-		  (strip_location_left0 full)
-		  c0
-	      in
-	      let (c1a,g1) =
-		factor_ctree_cgraft (n-1)
-		  (strip_location_right inpl)
-		  (strip_location_right0 outpl)
-		  (strip_location_right0 full)
-		  c1
-	      in
-	      (CBin(c0a,c1a),g0 @ g1)
-	  | CHash(h) -> (*** If we reach this point, the ctree does not support the tx, contrary to assumption. ***)
-	      raise (Failure("ctree does not support the tx"))
-	  | _ -> (c,[])
-	end
+        begin
+          match c with
+          | CLeft(c0) ->
+              let (c0a,g0) =
+                factor_ctree_cgraft (n-1)
+                  (strip_location_left inpl)
+                  (strip_location_left0 outpl)
+                  (strip_location_left0 full)
+                  c0
+              in
+              (CLeft(c0a),g0)
+          | CRight(c1) ->
+              let (c1a,g1) =
+                factor_ctree_cgraft (n-1)
+                  (strip_location_right inpl)
+                  (strip_location_right0 outpl)
+                  (strip_location_right0 full)
+                  c1
+              in
+              (CRight(c1a),g1)
+          | CBin(c0,c1) ->
+              let (c0a,g0) =
+                factor_ctree_cgraft (n-1)
+                  (strip_location_left inpl)
+                  (strip_location_left0 outpl)
+                  (strip_location_left0 full)
+                  c0
+              in
+              let (c1a,g1) =
+                factor_ctree_cgraft (n-1)
+                  (strip_location_right inpl)
+                  (strip_location_right0 outpl)
+                  (strip_location_right0 full)
+                  c1
+              in
+              (CBin(c0a,c1a),g0 @ g1)
+          | CHash(h) -> (* If we reach this point, the ctree does not support the tx, contrary to assumption. *)
+              raise (Failure("ctree does not support the tx"))
+          | _ -> (c,[])
+        end
     end
   else if full = [] then
     begin
@@ -88,9 +93,10 @@ let rec factor_ctree_cgraft n inpl outpl full c =
       | CLeaf((st,_),_) when st = 162 -> (c,[])
       | _ -> raise (Failure "impossible")
     end
-  else (*** At this point we are necessarily at a leaf. However, if the full hlist is not here, then it will not be fully supported. Not checking since we assume c supported before calling this. ***)
+  else (* At this point we are necessarily at a leaf. However, if the full hlist is not here, then it will not be fully supported. Not checking since we assume c supported before calling this. *)
     (c,[])
-  
+
+(* Factor a transaction ctree into a new ctree and a cgraft, given the input and output lists *)
 let factor_tx_ctree_cgraft (inpl,outpl) c =
   factor_ctree_cgraft
     162
@@ -99,6 +105,7 @@ let factor_tx_ctree_cgraft (inpl,outpl) c =
     (full_needed outpl)
     c
 
+(* Factor a ctree based on the input list only *)
 let factor_inputs_ctree_cgraft inpl c =
   factor_ctree_cgraft
     162
@@ -106,11 +113,16 @@ let factor_inputs_ctree_cgraft inpl c =
     [] []
     c
 
+(* Serialize a cgraft *)
 let seo_cgraft o g c = seo_list (seo_prod seo_hashval seo_ctree) o g c
+
+(* Deserialize a cgraft *)
 let sei_cgraft i c = sei_list (sei_prod sei_hashval sei_ctree) i c
 
+(* Serialize a cgraft with ctree0 *)
 let seo_cgraft0 o g c = seo_list (seo_prod seo_hashval seo_ctree0) o g c
 
+(* Deserialize a cgraft with ctree0 *)
 let rec sei_cgraft0 ctree_pl i c =
   let (b,c) = i 1 c in
   if b = 0 then
@@ -124,9 +136,11 @@ let rec sei_cgraft0 ctree_pl i c =
       ((h,tr)::r,c)
     with Not_found ->
       raise (Failure (Printf.sprintf "do not know pl for %s" (hashval_hexstring h)))
-                   
+
+(* Compute the hash of a cgraft *)
 let hashcgraft g =
   hashlist (List.map (fun (h,c) -> hashpair h (hashctree c)) g)
 
+(* Compute the hash of a cgraft with ctree0 *)
 let hashcgraft0 g =
   hashlist (List.map (fun (h,c) -> hashpair h (hashctree0 c)) g)
