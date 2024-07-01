@@ -82,6 +82,7 @@ val print_consensus_warning : out_channel -> consensuswarning -> unit
 
 val get_burn : hashval -> hashval * hashval
 val get_bestblock : unit -> (hashval * hashval * hashval) option * consensuswarning list
+val get_bestblock_or_previous : unit -> (hashval * hashval * hashval) option
 val get_bestblock_print_warnings : out_channel -> (hashval * hashval * hashval) option
 val get_bestblock_cw_exception : exn -> hashval * hashval * hashval
 

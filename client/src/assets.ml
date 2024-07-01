@@ -698,6 +698,10 @@ let asset_from_json j =
   | _ ->
       raise (Failure("not an asset"))
 
+let tx_count_recompute : int ref = ref 0
+let addr_count_recompute : int ref = ref 0
+let tx_count : int ref = ref 0
+let addr_count : int ref = ref 0
 (* The asset_id_hash_history table stores the history of asset ID hashes. *)
 let asset_id_hash_history : (hashval,hashval * hashval * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
 
@@ -709,76 +713,72 @@ let asset_id_hash_table_bkp : (hashval,hashval * hashval * hashval option) Hasht
 
 (* The asset_id_hash_table table stores the current asset ID hash table. *)
 let asset_id_hash_table : (hashval,hashval * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
-
+let addr_contents_history_table : (hashval,(addr * asset)) Hashtbl.t = Hashtbl.create 10
+let addr_contents_table_bkp : (addr,asset) Hashtbl.t = Hashtbl.create 10
+let addr_contents_table : (addr,asset) Hashtbl.t = Hashtbl.create 10
+let block_txcount_history_table : (hashval,int) Hashtbl.t = Hashtbl.create 10
+let blockheight_history_table : (hashval,int64) Hashtbl.t = Hashtbl.create 10
 (* The spent_table_refreshing flag indicates whether the spent_table is currently being refreshed. *)
 let spent_table_refreshing : bool ref = ref false
-
 (* The spent_table_bkp table stores a backup of the spent_table. *)
-let spent_table_bkp : (hashval,(hashval * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
-
+let spent_table_bkp : (hashval,(hashval * hashval * hashval option * int64)) Hashtbl.t = Hashtbl.create 10
 (* The spent_table table stores the current spent table. *)
-let spent_table : (hashval,(hashval * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
-
+let spent_table : (hashval,(hashval * hashval * hashval option * int64)) Hashtbl.t = Hashtbl.create 10
 (* The spent_history_table table stores the history of spent tables. *)
 let spent_history_table : (hashval,((hashval * hashval * hashval option) list * hashval option)) Hashtbl.t = Hashtbl.create 10
 
 (* The bounty_sorted_refreshing flag indicates whether the bounty_sorted table is currently being refreshed. *)
 let bounty_sorted_refreshing : bool ref = ref false
-
 (* The bounty_sorted_bkp table stores a backup of the bounty_sorted table. *)
-let bounty_sorted_bkp : (addr * hashval * int64 * hashval * hashval option) list ref = ref []
-
+let bounty_sorted_bkp : (int64 * addr * hashval * int64 * hashval * hashval option) list ref = ref []
 (* The bounty_sorted table stores the current sorted list of bounties. *)
-let bounty_sorted : (addr * hashval * int64 * hashval * hashval option) list ref = ref []
-
+let bounty_sorted : (int64 * addr * hashval * int64 * hashval * hashval option) list ref = ref []
+let placed_bounty_sorted : (int64 * addr * hashval * int64 * hashval * hashval option) list ref = ref []
+let collected_bounty_sorted : (int64 * hashval * hashval option * int64 * addr * hashval * int64 * hashval * hashval option) list ref = ref []
+let sig_table_bkp : (addr, (payaddr * hashval option * hashval)) Hashtbl.t = Hashtbl.create 10
+let doc_table_bkp : (addr, (payaddr * hashval option * hashval)) Hashtbl.t = Hashtbl.create 1000
+let sig_table : (addr, (payaddr * hashval option * hashval)) Hashtbl.t = Hashtbl.create 10
+let doc_table : (addr, (payaddr * hashval option * hashval)) Hashtbl.t = Hashtbl.create 1000
+let sig_history_table : (hashval, (addr * payaddr * hashval option * hashval)) Hashtbl.t = Hashtbl.create 10
+let doc_history_table : (hashval, (addr * payaddr * hashval option * hashval)) Hashtbl.t = Hashtbl.create 1000
+let bounty_sum : int64 ref = ref 0L
+let open_bounty_sum : int64 ref = ref 0L
 (* The bounty_history_table table stores the history of bounty tables. *)
-let bounty_history_table : (hashval,(addr * hashval * int64 * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
-
+let bounty_history_table : (hashval,(int64 * addr * hashval * int64 * hashval * hashval option)) Hashtbl.t = Hashtbl.create 10
+let theory_history_table : (hashval,(hashval * hashval * addr * payaddr)) Hashtbl.t = Hashtbl.create 10
+let theory_info : (hashval, hashval * addr * payaddr) Hashtbl.t = Hashtbl.create 10
+let theory_info_bkp : (hashval, hashval * addr * payaddr) Hashtbl.t = Hashtbl.create 10
 (* The term_info_refreshing flag indicates whether the term_info table is currently being refreshed. *)
 let term_info_refreshing : bool ref = ref false
-
 (* The term_info_bkp table stores a backup of the term_info table. *)
-let term_info_bkp : (hashval,trm * hashval * hashval option * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
-
+let term_info_bkp : (hashval,trm * hashval * hashval option * hashval * hashval option * bool * hashval) Hashtbl.t = Hashtbl.create 10
 (* The term_info table stores the current term info table. *)
-let term_info : (hashval,trm * hashval * hashval option * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
-
+let term_info : (hashval,trm * hashval * hashval option * hashval * hashval option * bool * hashval) Hashtbl.t = Hashtbl.create 10
 (* The term_info_hf table stores the current term info hash function table. *)
 let term_info_hf : (hashval,trm) Hashtbl.t = Hashtbl.create 10
-
 (* The obj_info_bkp table stores a backup of the obj_info table. *)
-let obj_info_bkp : (hashval,hashval option * stp * hashval * bool) Hashtbl.t = Hashtbl.create 10
-
+let obj_info_bkp : (hashval,hashval option * stp * hashval * trm * bool * addr) Hashtbl.t = Hashtbl.create 10
 (* The obj_info table stores the current object info table. *)
-let obj_info : (hashval,hashval option * stp * hashval * bool) Hashtbl.t = Hashtbl.create 10
-
+let obj_info : (hashval,hashval option * stp * hashval * trm * bool * addr) Hashtbl.t = Hashtbl.create 10
 (* The obj_info_hf table stores the current object info hash function table. *)
-let obj_info_hf : (hashval,stp * hashval) Hashtbl.t = Hashtbl.create 10
-
+let obj_info_hf : (hashval,stp * hashval * trm) Hashtbl.t = Hashtbl.create 10
 (* The prop_info_bkp table stores a backup of the prop_info table. *)
-let prop_info_bkp : (hashval,hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
-
+let prop_info_bkp : (hashval,hashval option * hashval * trm * bool * addr) Hashtbl.t = Hashtbl.create 10
 (* The prop_info table stores the current proposition info table. *)
-let prop_info : (hashval,hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
-
+let prop_info : (hashval,hashval option * hashval * trm * bool * addr) Hashtbl.t = Hashtbl.create 10
 (* The prop_info_hf table stores the current proposition info hash function table. *)
-let prop_info_hf : (hashval,hashval) Hashtbl.t = Hashtbl.create 10
-
+let prop_info_hf : (hashval,hashval * trm) Hashtbl.t = Hashtbl.create 10
 (* The negprop_info_bkp table stores a backup of the negprop_info table. *)
 let negprop_info_bkp : (hashval,hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
 
 (* The negprop_info table stores the current negative proposition info table. *)
 let negprop_info : (hashval,hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
-
 (* The term_history_table table stores the history of term info tables. *)
-let term_history_table : (hashval,hashval * trm * hashval * hashval option * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
-
+let term_history_table : (hashval,hashval * trm * hashval * hashval option * hashval * hashval option * bool * hashval) Hashtbl.t = Hashtbl.create 10
 (* The obj_history_table table stores the history of object info tables. *)
-let obj_history_table : (hashval,hashval * hashval option * stp * hashval * bool) Hashtbl.t = Hashtbl.create 10
-
+let obj_history_table : (hashval,hashval * hashval option * stp * hashval * trm * bool * addr) Hashtbl.t = Hashtbl.create 10
 (* The prop_history_table table stores the history of proposition info tables. *)
-let prop_history_table : (hashval,hashval * hashval option * hashval * bool) Hashtbl.t = Hashtbl.create 10
-
+let prop_history_table : (hashval,hashval * hashval option * hashval * trm * bool * addr) Hashtbl.t = Hashtbl.create 10
 (* The ownsobj_history_table table stores the history of ownership of objects. *)
 let ownsobj_history_table : (hashval,hashval * hashval * int64 * payaddr * payaddr * int64 option) Hashtbl.t = Hashtbl.create 10
 

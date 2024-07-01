@@ -74,6 +74,7 @@ type ltcutxo =
   | LtcBech32 of (string * int * string * string * int64)
 
 val ltc_listunspent : unit -> ltcutxo list
+val ltc2_listunspent : unit -> ltcutxo list
 
 exception InsufficientLtcFunds
 val ltc_createburntx : hashval -> hashval -> int64 -> string

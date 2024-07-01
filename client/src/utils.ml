@@ -22,7 +22,7 @@ let closelog () =
 (* Logs a string to the log file, with a timestamp. *)
 let log_string x =
   let m=Unix.localtime(Unix.time()) in
-  Printf.fprintf !log "[%d-%d-%d %d:%02d:%02d] " (1900+m.tm_year) (1+m.tm_mon) (m.tm_mday)  (m.tm_hour) (m.tm_min) (m.tm_sec);
+  Printf.fprintf !log "[%d-%d-%d %d:%02d:%02d %02d] " (1900+m.tm_year) (1+m.tm_mon) (m.tm_mday)  (m.tm_hour) (m.tm_min) (m.tm_sec) (Thread.id (Thread.self ()));
   output_string !log x;
   flush !log;
   if pos_out !log > 100000000 then (*** prevent debug.log from becoming more than 100MB ***)

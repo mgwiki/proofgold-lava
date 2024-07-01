@@ -40,10 +40,12 @@ let extend_explorer_info lkey pfgbh bhd bd blkhght =
            [])
   in
   let handle_out otx (alpha,(aid,bday,obl,u)) =
-    Hashtbl.add asset_id_hash_history lkey (aid,hashasset (aid,bday,obl,u),pfgbh,otx);
+    let ah = hashasset (aid,bday,obl,u) in
+    Hashtbl.add asset_id_hash_history lkey (aid,ah,pfgbh,otx);
+    Hashtbl.add addr_contents_history_table lkey (alpha,(aid,bday,obl,u));
     match u with
     | Bounty(v) ->
-       Hashtbl.add bounty_history_table lkey (alpha,aid,v,pfgbh,otx)
+       Hashtbl.add bounty_history_table lkey (bday,alpha,aid,v,pfgbh,otx)
     | OwnsObj(oid,gamma,r) ->
        begin
          match obl with
@@ -68,6 +70,12 @@ let extend_explorer_info lkey pfgbh bhd bd blkhght =
     | TheoryPublication(beta,_,thyspec) ->
        begin
          let thyh = hashtheory (theoryspec_theory thyspec) in
+         begin
+           match thyh with
+           | Some(thyh) ->
+              Hashtbl.add theory_history_table lkey (thyh,aid,alpha,beta);
+           | None -> ()
+         end;
          let cnt = ref 0 in
          List.iter
            (fun i ->
@@ -76,56 +84,107 @@ let extend_explorer_info lkey pfgbh bhd bd blkhght =
                 let m = Logic.Prim(!cnt) in
                 let h = tm_hashroot m in
                 incr cnt;
-                Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
                 let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
-                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,true)
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval objid;
+                Hashtbl.add term_theory_objid_history_table lkey (thyh,h,objid);
+                Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx,false,objid);
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,m,true,alpha)
              | Thyaxiom(p) ->
                 let h = tm_hashroot p in
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval propid;
+                let np = neg_prop p in
+                let nh = tm_hashroot np in
+                let npropid = hashtag (hashopair2 thyh nh) 33l in
+                enter_term_addr_hashval nh;
+                enter_term_addr_hashval npropid;
+                Hashtbl.add propid_neg_propid h nh;
+                Hashtbl.add propid_neg_propid nh h;
+                Hashtbl.add propid_neg_propid propid npropid;
+                Hashtbl.add propid_neg_propid npropid propid;
                 begin
                   match p with
                   | TmH(_) -> ()
                   | _ ->
-                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx);
+                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx,true,propid);
                 end;
-                let propid = hashtag (hashopair2 thyh h) 33l in
-                Hashtbl.add prop_history_table lkey (propid,thyh,h,true)
+                Hashtbl.add prop_history_table lkey (propid,thyh,h,p,true,alpha)
              | Thydef(a,m) ->
                 let h = tm_hashroot m in
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval objid;
+                Hashtbl.add term_theory_objid_history_table lkey (thyh,h,objid);
                 begin
                   match m with
                   | TmH(_) -> ()
                   | _ ->
-                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx,false,objid);
                 end;
-                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
-                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false))
-           thyspec
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,m,false,alpha))
+           (List.rev thyspec)
+       end
+    | SignaPublication(beta,_,thyh,_) ->
+       begin
+         Hashtbl.add sig_history_table lkey (alpha,beta,thyh,ah);
        end
     | DocPublication(beta,_,thyh,dl) ->
        begin
+         Hashtbl.add doc_history_table lkey (alpha,beta,thyh,ah);
          List.iter
            (fun i ->
              match i with
              | Logic.Docpfof(p,_) ->
                 let h = tm_hashroot p in
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval propid;
+                let np = neg_prop p in
+                let nh = tm_hashroot np in
+                let npropid = hashtag (hashopair2 thyh nh) 33l in
+                enter_term_addr_hashval nh;
+                enter_term_addr_hashval npropid;
+                Hashtbl.add propid_neg_propid h nh;
+                Hashtbl.add propid_neg_propid nh h;
+                Hashtbl.add propid_neg_propid propid npropid;
+                Hashtbl.add propid_neg_propid npropid propid;
                 begin
                   match p with
                   | TmH(_) -> ()
                   | _ ->
-                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx);
+                     Hashtbl.add term_history_table lkey (h,p,aid,thyh,pfgbh,otx,true,propid);
                 end;
-                let propid = hashtag (hashopair2 thyh h) 33l in
-                Hashtbl.add prop_history_table lkey (propid,thyh,h,false)
+                Hashtbl.add prop_history_table lkey (propid,thyh,h,p,false,alpha)
              | Docdef(a,m) ->
                 let h = tm_hashroot m in
+                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval objid;
+                Hashtbl.add term_theory_objid_history_table lkey (thyh,h,objid);
                 begin
                   match m with
                   | TmH(_) -> ()
                   | _ ->
-                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx);
+                     Hashtbl.add term_history_table lkey (h,m,aid,thyh,pfgbh,otx,false,objid);
                 end;
-                let objid = hashtag (hashopair2 thyh (hashpair h (hashtp a))) 32l in
-                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,false)
+                Hashtbl.add obj_history_table lkey (objid,thyh,a,h,m,false,alpha)
+             | Docconj(p) ->
+                let h = tm_hashroot p in
+                let propid = hashtag (hashopair2 thyh h) 33l in
+                enter_term_addr_hashval h;
+                enter_term_addr_hashval propid;
+                let np = neg_prop p in
+                let nh = tm_hashroot np in
+                let npropid = hashtag (hashopair2 thyh nh) 33l in
+                enter_term_addr_hashval nh;
+                enter_term_addr_hashval npropid;
+                Hashtbl.add propid_neg_propid h nh;
+                Hashtbl.add propid_neg_propid nh h;
+                Hashtbl.add propid_neg_propid propid npropid;
+                Hashtbl.add propid_neg_propid npropid propid;
+                Hashtbl.add propid_conj_pub_history_table lkey (propid,alpha);
              | _ -> ())
            dl
        end
@@ -144,6 +203,8 @@ let extend_explorer_info lkey pfgbh bhd bd blkhght =
         tauin;
       List.iter (handle_out (Some(stxid))) (add_vout blkhght txh tauout 0l))
     bd.blockdelta_stxl;
+  Hashtbl.add blockheight_history_table lkey blkhght;
+  Hashtbl.add block_txcount_history_table lkey (1 + List.length bd.blockdelta_stxl);
   match bhd.prevblockhash with
   | Some(_,Poburn(plbk,pltx,_,_,_,_)) ->
      Hashtbl.add spent_history_table lkey (!spenthereinfo,Some(hashpair plbk pltx));
@@ -749,7 +810,7 @@ let rec process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd
 	         if dbp then
 	           begin
 	             DbBlockDelta.dbput h bd;
-                     extend_explorer_info lkey h bhd bd currhght;
+                     if !Config.explorer then extend_explorer_info lkey h bhd bd currhght;
                      rem_missing_delta h
 	           end;
 	         if forw then
@@ -1261,7 +1322,7 @@ let get_burn dbh =
 	  with Not_found -> false
 	end)
     bbl
-    
+
 let rec get_bestblock () =
   match !artificialbestblock with
   | Some(h,lbk,ltx) -> (Some(h,lbk,ltx),[])
@@ -1344,7 +1405,15 @@ let ensure_sync () =
               end)
         ctips)
     ctips0l
-    
+
+let get_bestblock_or_previous =
+  let previous_bestblock = ref None in
+  fun () ->
+    let (b,_) = get_bestblock () in
+    match b with
+    | None -> !previous_bestblock
+    | Some(_) -> previous_bestblock := b; b
+
 let publish_stx txh stx1 =
   if not (Hashtbl.mem stxpool txh) then Hashtbl.add stxpool txh stx1;
   DbSTx.dbput txh stx1;

@@ -35,3 +35,4 @@ val and_big_int : Z.t -> Z.t -> Z.t
 val or_big_int : Z.t -> Z.t -> Z.t
 val shift_left_big_int : Z.t -> int -> Z.t
 val shift_right_towards_zero_big_int : Z.t -> int -> Z.t
+val loclist_to_code : bool option list -> int * Z.t

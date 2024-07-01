@@ -105,7 +105,6 @@ val createmultisig : int -> jsonval -> p2shaddr * int list
 val report_recenttxs : out_channel -> hashval -> int -> unit
 val report_recentdocs : out_channel -> hashval -> int -> unit
 val report_recentthms : out_channel -> hashval -> int -> unit
-val report_recentbountiesplaced : out_channel -> hashval -> int -> unit
 
 val report_recenttrmroot_defined : out_channel -> hashval -> hashval -> int -> unit
 val report_recentobjid_defined : out_channel -> hashval -> hashval -> int -> unit

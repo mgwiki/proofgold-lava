@@ -11,6 +11,18 @@ open Db
 open Logic
 open Htree
 
+val term_hfbuiltin_objid : (hashval,hashval) Hashtbl.t
+val term_theory_objid_history_table : (hashval,hashval option * hashval * hashval) Hashtbl.t
+val term_theory_objid_bkp : (hashval option * hashval,hashval) Hashtbl.t
+val term_theory_objid : (hashval option * hashval,hashval) Hashtbl.t
+val term_addr_hashval : (addr,hashval) Hashtbl.t
+val propid_conj_pub_history_table : (hashval,hashval * addr) Hashtbl.t
+val propid_conj_pub_bkp : (hashval,addr) Hashtbl.t
+val propid_conj_pub : (hashval,addr) Hashtbl.t
+
+val enter_term_addr_hashval : hashval -> unit
+val preimage_of_term_addr_json : addr -> (string * jsonval) list -> (string * jsonval) list
+
 (** * serialization code ***)
 
 val seo_tp : (int -> int -> 'a -> 'a) -> stp -> 'a -> 'a
@@ -123,11 +135,14 @@ val print_trm : stp list -> gsign -> trm -> stp list -> unit
 val print_tp : stp -> int -> unit
 
 val invert_neg_prop : trm -> trm
+val neg_prop : trm -> trm
+val propid_neg_propid : (hashval,hashval) Hashtbl.t
 
 val mgnice : bool ref
 val mgnicestp : bool ref
 val mgnatnotation : bool ref
 
+val mglegendt : (hashval,string) Hashtbl.t
 val mglegend : (hashval,string) Hashtbl.t
 val mglegendp : (hashval,string) Hashtbl.t
 val mgifthenelse : (hashval,unit) Hashtbl.t
@@ -159,10 +174,13 @@ val theoryspec_from_json : jsonval -> theoryspec
 val signaspec_from_json : jsonval -> signaspec
 val doc_from_json : jsonval -> doc
 
-val mgdoc_out : out_channel -> hashval option -> doc -> unit
-val mg_nice_stp : hashval option -> stp -> string
-val mg_nice_trm : hashval option -> trm -> string
+val mghtml_nice_stp : hashval option -> stp -> string
+val mghtml_nice_trm : hashval option -> trm -> string
 val hfthyroot : hashval
 val hfprimnamesa : string array
 
+val json_trm_partial : string -> int -> hashval option -> trm -> int -> bool option list -> string list -> jsonval * int
+val json_pf_partial : string -> int -> hashval option -> pf -> int -> bool option list -> string list -> string list -> jsonval * int
 
+val html_trm_partial : string -> int -> hashval option -> trm -> int -> bool option list -> string list -> string * int
+val html_pf_partial : string -> int -> hashval option -> pf -> int -> bool option list -> string list -> string list -> string * int

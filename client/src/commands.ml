@@ -18,6 +18,7 @@ open Cryptocurr
 open Signat
 open Ltcrpc
 open Script
+open Mathdata
 open Assets
 open Tx
 open Ctre
@@ -972,12 +973,23 @@ let assets_at_address_in_ledger_json raiseempty alpha par ledgerroot blkh =
 	hlist_report_assets_json hr
   in
   begin
+    let add_previous_assets jpal jpalcnt =
+      List.iter
+        (fun ((aid,bday,obl,u) as a) ->
+          if !jpalcnt < 10 then
+            if Hashtbl.mem (if !spent_table_refreshing then spent_table_bkp else spent_table) aid then
+              (incr jpalcnt; jpal := json_asset a::!jpal))
+        (Hashtbl.find_all (if !asset_id_hash_refreshing then addr_contents_table_bkp else addr_contents_table) alpha);
+    in
     match !alpha_hl with
     | (Some(hl),_) ->
-	let jhl = hlist_report_assets_json (Ctre.nehlist_hlist hl) in
-	let s = Buffer.create 100 in
-	Ctre.print_hlist_to_buffer_gen s blkh (Ctre.nehlist_hlist hl) sumcurr;
-	jal := [("address",JsonStr(alphas));("total",JsonNum(bars_of_atoms !tot));("contents",JsonStr(Buffer.contents s));("currentassets",JsonArr(jhl))]
+       let jhl = hlist_report_assets_json (Ctre.nehlist_hlist hl) in
+       let jpal = ref [] in
+       let jpalcnt = ref 0 in
+       add_previous_assets jpal jpalcnt;
+       let s = Buffer.create 100 in
+       Ctre.print_hlist_to_buffer_gen s blkh (Ctre.nehlist_hlist hl) sumcurr;
+       jal := [("address",JsonStr(alphas));("total",JsonNum(bars_of_atoms !tot));("contents",JsonStr(Buffer.contents s));("currentassets",JsonArr(jhl));("previousassets",JsonArr(!jpal))]
     | (None,z) ->
 	if raiseempty then
 	  raise EmptyAddress
@@ -987,7 +999,12 @@ let assets_at_address_in_ledger_json raiseempty alpha par ledgerroot blkh =
 	    jal := [("address",JsonStr(alphas))]
 	  end
 	else
-	  jal := [("address",JsonStr(alphas));("contents",JsonStr("empty"))]
+          begin
+            let jpal = ref [] in
+            let jpalcnt = ref 0 in
+            add_previous_assets jpal jpalcnt;
+	    jal := [("address",JsonStr(alphas));("contents",JsonStr("empty"));("previousassets",JsonArr(!jpal))]
+          end
   end;
   let rec assets_at_address_in_ledger_json_history alpha par =
     match par with
@@ -2694,11 +2711,25 @@ let proofgold_addr_jsoninfo raiseempty alpha pbh ledgerroot blkh =
 	end
   in
   let (jal,jwl) = assets_at_address_in_ledger_json raiseempty alpha par ledgerroot blkh in
-  if jwl = [] then
-    JsonObj(("ledgerroot",JsonStr(hashval_hexstring ledgerroot))::("block",jpbh)::jal)
-  else
-    JsonObj(("ledgerroot",JsonStr(hashval_hexstring ledgerroot))::("block",jpbh)::("warnings",JsonArr(jwl))::jal)
-    
+  try
+    let ph = Hashtbl.find term_addr_hashval alpha in
+    try
+      let conjpub = Hashtbl.find (if !term_info_refreshing then propid_conj_pub_bkp else propid_conj_pub) ph in
+      if jwl = [] then
+        JsonObj(("ledgerroot",JsonStr(hashval_hexstring ledgerroot))::("block",jpbh)::("preimagehash",JsonStr(hashval_hexstring ph))::("conjpub",JsonStr(addr_pfgaddrstr conjpub))::jal)
+      else
+        JsonObj(("ledgerroot",JsonStr(hashval_hexstring ledgerroot))::("block",jpbh)::("warnings",JsonArr(jwl))::("preimagehash",JsonStr(hashval_hexstring ph))::("conjpub",JsonStr(addr_pfgaddrstr conjpub))::jal)
+    with Not_found ->
+      if jwl = [] then
+        JsonObj(("ledgerroot",JsonStr(hashval_hexstring ledgerroot))::("block",jpbh)::("preimagehash",JsonStr(hashval_hexstring ph))::jal)
+      else
+        JsonObj(("ledgerroot",JsonStr(hashval_hexstring ledgerroot))::("block",jpbh)::("warnings",JsonArr(jwl))::("preimagehash",JsonStr(hashval_hexstring ph))::jal)
+  with Not_found ->
+    if jwl = [] then
+      JsonObj(("ledgerroot",JsonStr(hashval_hexstring ledgerroot))::("block",jpbh)::jal)
+    else
+      JsonObj(("ledgerroot",JsonStr(hashval_hexstring ledgerroot))::("block",jpbh)::("warnings",JsonArr(jwl))::jal)
+
 let query_at_block q pbh ledgerroot blkh =
   if String.length q = 64 || String.length q = 40 then
     begin
@@ -2806,7 +2837,6 @@ let query_at_block q pbh ledgerroot blkh =
 	    let jr =
 	      jpb @
 	      [("stakeaddress",JsonStr(addr_pfgaddrstr (p2pkhaddr_addr alpha)));
-	       ("stakeassetid",JsonStr(hashval_hexstring aid));
 	       ("timestamp",JsonNum(Int64.to_string timestamp));
 	       ("deltatime",JsonNum(Int32.to_string deltatime));
 	       ("prevledgerroot",JsonStr(hashval_hexstring (ctree_hashroot bhd.prevledger)));
@@ -2817,7 +2847,7 @@ let query_at_block q pbh ledgerroot blkh =
             let jr =
               match bhd.pureburn with
               | Some(h,v) -> ("pureburn",JsonObj([("txid1",JsonStr(hashval_hexstring h));("vout1",JsonNum(Int32.to_string v))]))::jr
-              | None -> jr
+              | None -> ("stakeassetid",JsonStr(hashval_hexstring aid))::jr
             in
 	    let jr =
 	      match bhd.newtheoryroot with
@@ -2888,8 +2918,17 @@ let query_at_block q pbh ledgerroot blkh =
             let d = termaddr_addr (hashval_be160 h) in
             let j = proofgold_addr_jsoninfo true d pbh ledgerroot blkh in
 	    dbentries := JsonObj([("type",JsonStr("termid"));("termaddress",JsonStr(addr_pfgaddrstr d));("termaddressinfo",j)])::!dbentries;
-	  with _ -> ()
+	  with EmptyAddress -> ()
 	end;
+        (* This would give the contents of the address of the publication, but it seems we never query it this way.
+	begin
+	  try
+            let d = pubaddr_addr (hashval_be160 h) in
+            let j = proofgold_addr_jsoninfo true d pbh ledgerroot blkh in
+	    dbentries := JsonObj([("type",JsonStr("pubid"));("pubaddress",JsonStr(addr_pfgaddrstr d));("contents",j)])::!dbentries;
+	  with EmptyAddress -> ()
+	end;
+         *)
         begin
           try
             let m = Hashtbl.find term_info_hf h in
@@ -2897,19 +2936,21 @@ let query_at_block q pbh ledgerroot blkh =
             | Prim(i) ->
                dbentries := JsonObj([("type",JsonStr("termroot"));("hfbuiltin",JsonBool(true));("hfprimnum",JsonNum(Printf.sprintf "%d" i));("primname",JsonStr(Mathdata.hfprimnamesa.(i)))])::!dbentries
             | _ ->
-               dbentries := JsonObj([("type",JsonStr("termroot"));("hfbuiltin",JsonBool(true));("trmpres",JsonStr(Mathdata.mg_nice_trm (Some(Mathdata.hfthyroot)) m))])::!dbentries;
+               dbentries := JsonObj([("type",JsonStr("termroot"));("hfbuiltin",JsonBool(true));("trmpres",JsonStr(Mathdata.mghtml_nice_trm (Some(Mathdata.hfthyroot)) m))])::!dbentries;
           with Not_found -> ()
         end;
         begin
           try
-            let (a,tmroot) = Hashtbl.find obj_info_hf h in
-            dbentries := JsonObj([("type",JsonStr("obj"));("hfbuiltin",JsonBool(true));("stppres",JsonStr(Mathdata.mg_nice_stp (Some(Mathdata.hfthyroot)) a));("termroot",JsonStr(hashval_hexstring tmroot))])::!dbentries
+            let (a,tmroot,m) = Hashtbl.find obj_info_hf h in
+            let names = Hashtbl.find_all mglegend h in
+            dbentries := JsonObj([("type",JsonStr("obj"));("hfbuiltin",JsonBool(true));("stppres",JsonStr(Mathdata.mghtml_nice_stp (Some(Mathdata.hfthyroot)) a));("trmpres",JsonStr(Mathdata.mghtml_nice_trm (Some(Mathdata.hfthyroot)) m));("termroot",JsonStr(hashval_hexstring tmroot));("defaultnames",JsonArr(List.map (fun x -> JsonStr(x)) names))])::!dbentries
           with Not_found -> ()
         end;
         begin
           try
-            let tmroot = Hashtbl.find prop_info_hf h in
-            dbentries := JsonObj([("type",JsonStr("prop"));("hfbuiltin",JsonBool(true));("termroot",JsonStr(hashval_hexstring tmroot))])::!dbentries
+            let (tmroot,m) = Hashtbl.find prop_info_hf h in
+            let names = Hashtbl.find_all mglegendp h in
+            dbentries := JsonObj([("type",JsonStr("prop"));("hfbuiltin",JsonBool(true));("trmpres",JsonStr(Mathdata.mghtml_nice_trm (Some(Mathdata.hfthyroot)) m));("termroot",JsonStr(hashval_hexstring tmroot));("defaultnames",JsonArr(List.map (fun x -> JsonStr(x)) names))])::!dbentries
           with Not_found -> ()
         end;
         begin
@@ -2923,10 +2964,11 @@ let query_at_block q pbh ledgerroot blkh =
           with Not_found -> ()
         end;
         List.iter
-          (fun (m,aid,thyh,pfgbh,otx) ->
+          (fun (m,aid,thyh,pfgbh,otx,isprop,objorpropid) ->
             let thystr =
               match thyh with
-              | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+              | Some(h) ->
+                 [("theory",JsonStr(hashval_hexstring h));("theorynames",JsonArr(List.map (fun x -> JsonStr(x)) (Hashtbl.find_all Mathdata.mglegendt h)))]
               | None -> []
             in
             let txstr =
@@ -2958,13 +3000,24 @@ let query_at_block q pbh ledgerroot blkh =
                 [("ownerasprop",JsonObj([("owneraddr",JsonStr(addr_pfgaddrstr (payaddr_addr beta)));("assetid",JsonStr(hashval_hexstring aid));("bday",JsonNum(Printf.sprintf "%Ld" bday))]))]
               with Not_found -> []
             in
-            let al = thystr @ txstr @ creatorobj @ ownerobj @ creatorprop @ ownerprop in
-            let al = ("trmpres",JsonStr(Mathdata.mg_nice_trm thyh m))::al in
+            let objorpropinfo =
+              if isprop then
+                [("correspondingprop",JsonStr(hashval_hexstring objorpropid))]
+              else
+                [("correspondingobj",JsonStr(hashval_hexstring objorpropid))]
+            in
+            let al = thystr @ txstr @ creatorobj @ ownerobj @ creatorprop @ ownerprop @ objorpropinfo in
+            let al =
+              match m with
+              | Logic.Prim(i) -> ("primnum",JsonNum(string_of_int i))::al
+              | _ -> al
+            in
+            let al = ("trmpres",JsonStr(Mathdata.mghtml_nice_trm thyh m))::al in
             let al = ("type",JsonStr("termroot"))::al in
             dbentries := JsonObj(al)::!dbentries)
           (Hashtbl.find_all (if !term_info_refreshing then term_info_bkp else term_info) h);
         List.iter
-          (fun (thyh,a,tmroot,prim) ->
+          (fun (thyh,a,tmroot,m,prim,alpha) ->
             let creatorobj =
               try
                 let (aid,bday,beta) = Hashtbl.find created_obj_info h in
@@ -2979,31 +3032,29 @@ let query_at_block q pbh ledgerroot blkh =
             in
             let thyinfo =
               match thyh with
-              | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+              | Some(h) ->
+                 [("theory",JsonStr(hashval_hexstring h));("theorynames",JsonArr(List.map (fun x -> JsonStr(x)) (Hashtbl.find_all Mathdata.mglegendt h)))]
               | None -> []
             in
             let al = thyinfo @ creatorobj @ ownerobj in
-            let al = ("stppres",JsonStr(Mathdata.mg_nice_stp (Some(Mathdata.hfthyroot)) a))::al in
+            let al = ("firstpubaddr",JsonStr(addr_pfgaddrstr alpha))::al in
+            let al = ("trmpres",JsonStr(Mathdata.mghtml_nice_trm thyh m))::al in
+            let al = ("stppres",JsonStr(Mathdata.mghtml_nice_stp thyh a))::al in
+            let al =
+              match m with
+              | Prim(i) -> ("primnum",JsonNum(string_of_int i))::al
+              | _ -> al
+            in
             let al = ("termroot",JsonStr(hashval_hexstring tmroot))::al in
+            let d = termaddr_addr (hashval_be160 h) in
+            let al = ("termaddress",JsonStr(addr_pfgaddrstr d))::al in
+            let names = Hashtbl.find_all mglegend h in
+            let al = ("defaultnames",JsonArr(List.map (fun x -> JsonStr(x)) names))::al in
             let al = ("type",JsonStr("obj"))::al in
-            let ar = ref al in
-            List.iter
-              (fun (m,aid,thyh2,pfgbh,otx) ->
-                if thyh = thyh2 then
-                  begin
-                    let txstr =
-                      match otx with
-                      | Some(txid) -> [("tx",JsonStr(hashval_hexstring txid))]
-                      | None -> [("block",JsonStr(hashval_hexstring pfgbh))]
-                    in
-                    ar := !ar @ txstr;
-                    ar := !ar @ [("trmpres",JsonStr(Mathdata.mg_nice_trm thyh m))]
-                  end)
-              (Hashtbl.find_all (if !term_info_refreshing then term_info_bkp else term_info) tmroot);
-            dbentries := JsonObj(!ar)::!dbentries)
+            dbentries := JsonObj(al)::!dbentries)
           (Hashtbl.find_all (if !term_info_refreshing then obj_info_bkp else obj_info) h);
         List.iter
-          (fun (thyh,tmroot,prim) ->
+          (fun (thyh,tmroot,m,prim,alpha) ->
             let creatorprop =
               try
                 let (aid,bday,beta) = Hashtbl.find created_prop_info h in
@@ -3018,34 +3069,32 @@ let query_at_block q pbh ledgerroot blkh =
             in
             let thyinfo =
               match thyh with
-              | Some(h) -> [("theory",JsonStr(hashval_hexstring h))]
+              | Some(h) ->
+                 [("theory",JsonStr(hashval_hexstring h));("theorynames",JsonArr(List.map (fun x -> JsonStr(x)) (Hashtbl.find_all Mathdata.mglegendt h)))]
               | None -> []
             in
             let al = thyinfo @ creatorprop @ ownerprop in
+            let al = ("firstpubaddr",JsonStr(addr_pfgaddrstr alpha))::al in
             let al = ("termroot",JsonStr(hashval_hexstring tmroot))::al in
+            let al = ("trmpres",JsonStr(Mathdata.mghtml_nice_trm thyh m))::al in
+            let al =
+              match m with
+              | Prim(i) -> ("primnum",JsonNum(string_of_int i))::al
+              | _ -> al
+            in
+            let d = termaddr_addr (hashval_be160 h) in
+            let al = ("termaddress",JsonStr(addr_pfgaddrstr d))::al in
+            let names = Hashtbl.find_all mglegendp h in
+            let al = ("defaultnames",JsonArr(List.map (fun x -> JsonStr(x)) names))::al in
             let al = ("type",JsonStr("prop"))::al in
-            let ar = ref al in
-            List.iter
-              (fun (m,aid,thyh2,pfgbh,otx) ->
-                if thyh = thyh2 then
-                  begin
-                    let txstr =
-                      match otx with
-                      | Some(txid) -> [("tx",JsonStr(hashval_hexstring txid))]
-                      | None -> [("block",JsonStr(hashval_hexstring pfgbh))]
-                    in
-                    ar := !ar @ txstr;
-                    ar := !ar @ [("trmpres",JsonStr(Mathdata.mg_nice_trm thyh m))]
-                  end)
-              (Hashtbl.find_all (if !term_info_refreshing then term_info_bkp else term_info) tmroot);
-            dbentries := JsonObj(!ar)::!dbentries)
+            dbentries := JsonObj(al)::!dbentries)
           (Hashtbl.find_all (if !term_info_refreshing then prop_info_bkp else prop_info) h);
 	if !dbentries = [] then
 	  JsonObj([("response",JsonStr("unknown"));("msg",JsonStr("No associated information found"))])
 	else
 	  JsonObj([("response",JsonStr("known"));("dbdata",JsonArr(!dbentries))])
-      with _ ->
-	JsonObj([("response",JsonStr("unknown"));("msg",JsonStr("Cannot interpret as hash value"))])
+      with exn ->
+	JsonObj([("response",JsonStr("unknown"));("msg",JsonStr("Cannot interpret as hash value" ^ Printexc.to_string exn))])
     end
   else
     begin
@@ -3931,14 +3980,6 @@ let report_recentthms oc h n =
     match u with
     | DocPublication(_,_,_,dl) ->
        List.exists (fun di -> match di with Logic.Docpfof(_,_) -> true | _ -> false) dl
-    | _ -> false
-  in
-  report_recenttxs_filtered p oc h n
-
-let report_recentbountiesplaced oc h n =
-  let p (_,(_,u)) =
-    match u with
-    | Bounty(_) -> true
     | _ -> false
   in
   report_recenttxs_filtered p oc h n
