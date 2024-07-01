@@ -5,16 +5,21 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+(* A reference to the exit function, which can be changed by other modules. *)
 let exitfn : (int -> unit) ref = ref (fun n -> exit n);;
 
+(* A reference to the log file, initialized to the standard error channel. *)
 let log : out_channel ref = ref stderr
 
+(* Opens the log file for writing. *)
 let openlog () =
   log := open_out_gen [Open_wronly;Open_creat;Open_append] 0o600 (!Config.datadir ^ (if !Config.testnet then "/testnet/debug.log" else "/debug.log"))
 
+(* Closes the log file. *)
 let closelog () =
   close_out_noerr !log
 
+(* Logs a string to the log file, with a timestamp. *)
 let log_string x =
   let m=Unix.localtime(Unix.time()) in
   Printf.fprintf !log "[%d-%d-%d %d:%02d:%02d %02d] " (1900+m.tm_year) (1+m.tm_mon) (m.tm_mday)  (m.tm_hour) (m.tm_min) (m.tm_sec) (Thread.id (Thread.self ()));
@@ -33,6 +38,7 @@ let log_string x =
 	end
     end
 
+(* Calculates the era of a block, based on its height. *)
 (***
  era ranges from 0 to 43
  era 0 from block 0 to block 209999
@@ -48,11 +54,14 @@ let era blkh =
   else
     43
 
-(*** the max block size is 500K during era 0 and doubles with each era, with a final max block size of 512M. ***)
+(* Calculates the maximum block size for a given block height. *)
+(* the max block size is 500K during era 0 and doubles with each era, with a final max block size of 512M. *)
 let maxblockdeltasize blkh = 500000 lsl (era blkh)
 
+(* A flag indicating whether the random number generator has been initialized. *)
 let random_initialized : bool ref = ref false;;
 
+(* Converts a hex character to its corresponding integer value. *)
 let hexchar_inv x =
   match x with
   | '0' -> 0
@@ -79,6 +88,7 @@ let hexchar_inv x =
   | 'f' -> 15
   | _ -> raise (Failure("not a hexit: " ^ (string_of_int (Char.code x))))
 
+(* Initializes the random number generator with a seed. *)
 let initialize_random_seed () =
   match !Config.randomseed with
   | Some(r) ->
@@ -104,23 +114,28 @@ let initialize_random_seed () =
 	begin
 	  raise (Failure("Since /dev/random is not on your system (Windows?), you must give some random seed with -randomseed\nMake sure the seed is really random or serious problems could result.\n"))
 	end
-	  
+
+(* Generates a random bit. *)
 let rand_bit () =
   if not !random_initialized then initialize_random_seed();
   Random.bool()
 
+(* Generates a random 32-bit integer. *)
 let rand_int32 () =
   if not !random_initialized then initialize_random_seed();
   Int32.logor (Int32.shift_left (Random.int32 65536l) 16) (Random.int32 65536l)
 
+(* Generates a random 64-bit integer. *)
 let rand_int64 () =
   if not !random_initialized then initialize_random_seed();
   Int64.logor (Int64.shift_left (Random.int64 4294967296L) 32) (Random.int64 4294967296L)
 
+(* Constants for hard fork heights. *)
 let late2020hardforkheight1 = 5000L
 let late2020hardforkheight2 = 15000L
 let lockingfixsoftforkheight = 13500L
 
+(* Decodes a base64-encoded string. *)
 (*** Following code in util.cpp in bitcoin ***)
 let decode64table = [|
         -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1;
@@ -138,12 +153,14 @@ let decode64table = [|
         -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1; -1
  |];;
 
+(* Encodes a base64-encoded string. *)
 let encode64table = [|'A'; 'B'; 'C'; 'D'; 'E'; 'F'; 'G'; 'H'; 'I'; 'J'; 'K'; 'L'; 'M'; 'N'; 'O';
   'P'; 'Q'; 'R'; 'S'; 'T'; 'U'; 'V'; 'W'; 'X'; 'Y'; 'Z'; 'a'; 'b'; 'c'; 'd';
   'e'; 'f'; 'g'; 'h'; 'i'; 'j'; 'k'; 'l'; 'm'; 'n'; 'o'; 'p'; 'q'; 'r'; 's';
   't'; 'u'; 'v'; 'w'; 'x'; 'y'; 'z'; '0'; '1'; '2'; '3'; '4'; '5'; '6'; '7';
   '8'; '9'; '+'; '/'|];;
 
+(* Decodes a base64-encoded string, handling padding. *)
 let base64decode_end s l i mode lft =
   if mode = 0 then (*** something extra is in the string, but shouldn't be. ***)
     raise (Failure("not a proper base64 string 0"))
@@ -162,6 +179,7 @@ let base64decode_end s l i mode lft =
   else (*** should never happen ***)
     raise (Failure("not a proper base64 string"))
 
+(* Decodes a base64-encoded string, accumulating the result in a list. *)
 let rec base64decode_a s l i mode lft =
   if i < l then
     let dec = decode64table.(Char.code(s.[i])) in
@@ -181,9 +199,11 @@ let rec base64decode_a s l i mode lft =
   else
     raise (Failure("base64 string ended in wrong mode"))
 
+(* Decodes a base64-encoded string. *)
 let base64decode s =
   base64decode_a s (String.length s) 0 0 0
 
+(* Converts a list of bytes to a list of octets. *)
 let rec bytelist_to_octetlist bl =
   match bl with
   | (by1::by2::by3::br) ->
@@ -195,6 +215,7 @@ let rec bytelist_to_octetlist bl =
       ([by1 lsr 2;(by1 land 3) lsl 4],2)
   | [] -> ([],0)
 
+(* Encodes a list of bytes as a base64-encoded string. *)
 let base64encode bl =
   let (ol,pad) = bytelist_to_octetlist bl in
   let bu = Buffer.create 30 in
@@ -202,4 +223,5 @@ let base64encode bl =
   for i = 1 to pad do Buffer.add_char bu '=' done;
   Buffer.contents bu
 
+(* A reference to the block height at which the Proofgold chain forks from the Litecoin chain. *)
 let forward_from_ltc_block = ref None
