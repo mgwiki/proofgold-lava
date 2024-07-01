@@ -16,11 +16,7 @@ $jsonc = pgj("querycollectedbounties " . $c . " " . $incr);
 <td><table><tr><th>Open bounties</th></tr><tr><td>
 <?php
 foreach ($jsono->bounties as $d) {
-    echo (isset($d->propid) ? (abbrvop($d->propid) . " ") : "") .
-    (isset($d->npropid) ? (abbrvop($d->npropid) . " ") : "") .
-    abbrvaddr($d->bountyaddress) . " " .
-    (isset($d->npropaddr) ? abbrvaddr($d->npropaddr) . " " : "") .
-    number_format($d->bountyvalue / 100000000000, 2) . "<br/>";
+    showbounty($d);
 }
 ?>
 <h3><a href="<?= "bounties.php?o=" . ((int) $o + $incr) . "&c=" . $c ?>">More open bounties</a></h3>
@@ -28,11 +24,7 @@ foreach ($jsono->bounties as $d) {
 <td><table><tr><th>Collected bounties</th></tr><tr><td>
 <?php
 foreach ($jsonc->bounties as $d) {
-    echo (isset($d->propid) ? (abbrvop($d->propid) . " ") : "") .
-    (isset($d->npropid) ? (abbrvop($d->npropid) . " ") : "") .
-    abbrvaddr($d->bountyaddress) . " " .
-    (isset($d->npropaddr) ? abbrvaddr($d->npropaddr) . " " : "") .
-    number_format($d->bountyvalue / 100000000000, 2) . "<br/>";
+    showbounty($d);
 }
 ?>
 <h3><a href="<?= "bounties.php?o=" . $o . "&c=" . ((int) $c + $incr) ?>">More closed bounties</a></h3>

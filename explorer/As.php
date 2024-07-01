@@ -31,7 +31,7 @@ include 'i/search.php';
     <td><table><tr><th>asset hash</th></tr><tr><td><?= $ahn ?></td></tr></table></td>
   </tr>
   <tr>
-    <td><table><tr><th>bday / block</th></tr><tr><td><?= ahrefblock($ah->bday) . " / " . abbrvblock($ai->block) ?></td></tr></table></td>
+    <td><table><tr><th>bday / block</th></tr><tr><td><?= ablock($ai->block, $ah->bday) ?></td></tr></table></td>
     <td><table><tr><th>tx</th></tr><tr><td><?php if (isset($ai->tx)) {echo abbrv($ai->tx);} else {echo "none";} ?></td></tr></table></td>
   </tr>
   <tr>

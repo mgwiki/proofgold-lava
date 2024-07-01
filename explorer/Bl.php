@@ -13,9 +13,9 @@ include 'i/search.php';
     <td><table><tr><th>creation</th></tr><tr><td><?= gmdate("Y-m-d H:i:s \G\M\T", $v->timestamp) ?></td></tr></table></td>
   </tr>
   <tr>
-       <td><table><tr><th>previous</th></tr><tr><td><?= isset($v->prevblock) ? abbrvblock($v->prevblock->block) : "-" ?></td></tr></table></td>
+       <td><table><tr><th>previous</th></tr><tr><td><?= isset($v->prevblock) ? ablock($v->prevblock->block, $v->height - 1) : "-" ?></td></tr></table></td>
     <td><table><tr><th>stake address</th></tr><tr><td>
-       <?php foreach ($v->coinstk->vin as $vi) { echo abbrvaddrasset($vi->address, $vi->assetid); }?>
+      <?= isset($v->stakeassetid) ? abbrvaddrasset($v->stakeaddress, $v->stakeassetid) : "Pure Burn " . abbrvaddr($v->stakeaddress) ?>
     </td></tr></table></td>
   </tr>
   <tr>
