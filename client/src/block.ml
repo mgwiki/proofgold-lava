@@ -22,7 +22,7 @@ open Tx
 open Ctre
 open Ctregraft
 
-(*** 256 bits ***)
+(* Define a type for stakemod, which is a 256-bit hash value *)
 type stakemod = hashval
 
 (*** The genesis stakemod should be the 32 bytes (64 hex chars) of the block hash for a particular litecoin block with height preannounced.
@@ -40,8 +40,10 @@ let basereward = 5000000000000L
 (*** the block reward begins at 50 bars (half to staker and half to bounty) and halves with each era until era 43 when it is 0 ***)
 let rewfn blkh = Int64.shift_right basereward (Utils.era blkh)
 
+(* Define a function to serialize a stakemod value *)
 let seo_stakemod o sm c = seo_hashval o sm c
 
+(* Define a function to deserialize a stakemod value *)
 let sei_stakemod i c = sei_hashval i c
 
 (*** one round of sha256 combining the timestamp (least significant 32 bits only), the hash value of the stake's assetid and the stake modifier, then converted to a big_int to do arithmetic ***)
@@ -52,25 +54,24 @@ let hitval tm h sm =
 (*** target (big_int, but assumed to be at most 256 bits ***)
 type targetinfo = Z.t
 
+(* Define functions to serialize and deserialize target information *)
 let targetinfo_string tar = string_of_big_int tar
 
 let eq_tinfo z w = eq_big_int z w
 
 let hashtargetinfo tar = big_int_hashval tar
+let seo_targetinfo o ti c = seo_big_int_256 o ti c
+let sei_targetinfo i c = sei_big_int_256 i c
 
-let seo_targetinfo o ti c =
-  seo_big_int_256 o ti c
-
-let sei_targetinfo i c =
-  sei_big_int_256 i c
-
+(* Define a function to calculate the proof-of-burn stakemod *)
 let poburn_stakemod p =
   match p with
   | Poburn(h,k,_,_,_,_) -> hashpair h k
 
+(* Define a ref for optional messages sent to an out_channel while checking validity of blocks *)
 let verbose_blockcheck = ref None
 
-(*** optional messages sent to an out_channel while checking validity of blocks ***)
+(* Define a function to send optional messages to an out_channel while checking validity of blocks *)
 let vbc f =
   match !verbose_blockcheck with
   | Some(c) -> f c; flush c
@@ -95,6 +96,7 @@ type blockheaderdata = {
     blockdeltaroot : hashval;
   }
 
+(* Define a type for block header signature *)
 type blockheadersig = {
     blocksignat : signat;
     blocksignatrecid : int;
@@ -102,8 +104,10 @@ type blockheadersig = {
     blocksignatendorsement : (p2pkhaddr * int * bool * signat) option;
   }
 
+(* Define a type for block header *)
 type blockheader = blockheaderdata * blockheadersig
 
+(* Define functions to serialize and deserialize block header data *)
 let seo_blockheaderdata o bh c =
   let c = seo_option (seo_prod seo_hashval seo_poburn) o bh.prevblockhash c in
   let c = seo_option (seo_prod seo_hashval seo_int32) o bh.pureburn c in
@@ -227,8 +231,10 @@ type blockdelta = {
     blockdelta_stxl : stx list
   }
 
+(* Define a type for block *)
 type block = blockheader * blockdelta
 
+(* Define functions to serialize and deserialize block delta *)
 let seo_blockdelta o bd c =
   let c = seo_list seo_addr_preasset o bd.stakeoutput c in
   let c = seo_cgraft o bd.prevledgergraft c in
@@ -241,6 +247,7 @@ let seo_blockdelta0 o bd c =
   let c = seo_list seo_stx o bd.blockdelta_stxl c in
   c
 
+(* Code to deserialize block delta *)
 let sei_blockdelta i c =
   let (stko,c) = sei_list sei_addr_preasset i c in
   let (cg,c) = sei_cgraft i c in
@@ -251,6 +258,7 @@ let sei_blockdelta i c =
    },
    c)
 
+(* Code to deserialize block delta without prevledgergraft *)
 let sei_blockdelta0 ctree_pl i c =
   let (stko,c) = sei_list sei_addr_preasset i c in
   let (cg,c) = sei_cgraft0 ctree_pl i c in
@@ -261,12 +269,15 @@ let sei_blockdelta0 ctree_pl i c =
    },
    c)
 
+(* Define functions to serialize and deserialize block *)
 let seo_block o b c = seo_prod seo_blockheader seo_blockdelta o b c
 let sei_block i c = sei_prod sei_blockheader sei_blockdelta i c
 
+(* Define modules for database operations on block header and block delta *)
 module DbBlockHeader = Dbmbasic (struct type t = blockheader let basedir = "blockheader" let seival = sei_blockheader seis let seoval = seo_blockheader seosb end)
 module DbBlockDelta = Dbmbasic (struct type t = blockdelta let basedir = "blockdelta" let seival = sei_blockdelta seis let seoval = seo_blockdelta seosb end)
 
+(* Define functions to get block header data, signature, and delta from the database *)
 let get_blockheaderdata h = 
   try
     let (d,s) = DbBlockHeader.dbget h in d
@@ -328,13 +339,16 @@ let check_hit_b blkh bday obl v csm tar tmstmp stkid stkaddr burned =
   else
     lt_big_int (hitval tmstmp stkid csm) (mult_big_int tar (big_int_of_int64 v))
 
+(* Code to check if a block is a valid hit *)
 let check_hit blkh csm tinf bh bday obl v burned =
   check_hit_b blkh bday obl v csm tinf bh.timestamp bh.stakeassetid bh.stakeaddr burned
 
+(* Define a function to get the coin stake from a block *)
 let coinstake b =
   let ((bhd,bhs),bd) = b in
   ([p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid],bd.stakeoutput)
 
+(* Define functions to hash block header data and signature *)
 let hash_blockheaderdata bh =
   hashtag
     (hashopair2
@@ -353,6 +367,7 @@ let hash_blockheaderdata bh =
 	   hashint32 bh.deltatime]))
     1028l
 
+  (* Code to hash block header signature *)
 let hash_blockheadersig bhs =
   hashopair1
     (hashpair
@@ -367,16 +382,20 @@ let hash_blockheadersig bhs =
 	       (hashlist [hashaddr (p2pkhaddr_addr alpha);hashint32 (Int32.of_int i); hashsignat s])
 	       (if b then 1031l else 1032l)))
 
+  (* Code to hash block header *)
 let hash_blockheader (bhd,bhs) =
   hashpair (hash_blockheaderdata bhd) (hash_blockheadersig bhs)
 
+(* Define a function to get the block header ID *)
 let blockheader_id bh = hash_blockheader bh
 
+(* Define a function to check if a genesis block header is valid *)
 let valid_genesisheader bhd =
   match tx_octree_trans false false 1L ([(p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)],[]) (Some(bhd.prevledger)) with
   | Some(c) -> ctree_hashroot c = !genesisledgerroot
   | None -> false
 
+(* Define a function to check if a block header is valid *)
 let valid_blockheader_allbutsignat blkh csm tinfo bhd (aid,bday,obl,u) lmedtm burned =
   if bhd.prevblockhash = None && not (valid_genesisheader bhd) then
     vbcv false (fun c -> Printf.fprintf c "Invalid genesis header\n")
@@ -400,6 +419,7 @@ let valid_blockheader_allbutsignat blkh csm tinfo bhd (aid,bday,obl,u) lmedtm bu
   | _ ->
       vbcv false (fun c -> Printf.fprintf c "staked asset %s of block header was not a currency asset\n" (hashval_hexstring aid))
 
+(* Code to check if a block header signature is valid *)
 let valid_blockheader_signat (bhd,bhs) (aid,bday,obl,v) =
   let bhdh = hash_blockheaderdata bhd in (*** check that it signs the hash of the data part of the header, distinct form blockheader_id which combines hash of data with hash of sig ***)
   if (try DbInvalidatedBlocks.dbget bhdh with Not_found -> false) then (*** explicitly marked as invalid ***)
@@ -421,6 +441,7 @@ let valid_blockheader_signat (bhd,bhs) (aid,bday,obl,v) =
 	  end
     end
 
+(* Code to check if a block header is valid *)
 let valid_blockheader_a blkh csm tinfo (bhd,bhs) (aid,bday,obl,v) lmedtm burned =
   let b1 = valid_blockheader_signat (bhd,bhs) (aid,bday,obl,v) in
   if b1 then
@@ -428,9 +449,11 @@ let valid_blockheader_a blkh csm tinfo (bhd,bhs) (aid,bday,obl,v) lmedtm burned 
   else
     vbcv false (fun c -> Printf.fprintf c "block header has invalid signature\n")
 
+(* Define exceptions for block header validation *)
 exception HeaderNoStakedAsset
 exception HeaderStakedAssetNotMin
 
+(* Define a function to get the staked asset from a block header *)
 let blockheader_stakeasset bhd =
   let bl = (0,p2pkhaddr_addr bhd.stakeaddr) in
   match ctree_lookup_asset false false false bhd.stakeassetid bhd.prevledger bl with (** do not be strict here precisely because we *want* to skip abstracted assets **)
@@ -448,6 +471,7 @@ let blockheader_stakeasset bhd =
       vbc (fun c -> Printf.fprintf c "No staked asset found\n");
       raise HeaderNoStakedAsset
 	
+(* Code to validate a block header *)
 let valid_blockheader blkh csm tinfo (bhd,bhs) lmedtm burned txid1 vout1 =
   try
     vbc (fun c -> Printf.fprintf c "valid_blockheader %Ld %Ld %Ld\n" blkh lmedtm burned);
@@ -473,8 +497,11 @@ let valid_blockheader blkh csm tinfo (bhd,bhs) lmedtm burned txid1 vout1 =
   | HeaderStakedAssetNotMin -> false
   | HeaderNoStakedAsset -> false
 
+
+(* This function validates a block header, considering the possibility of a pure burn. *)
 let valid_blockheader_ifburn blkh csm tinfo (bhd,bhs) lmedtm burned =
   try
+    (* Print debugging information. *)
     vbc (fun c -> Printf.fprintf c "valid_blockheader %Ld %Ld %Ld\n" blkh lmedtm burned);
     match bhd.pureburn with
     | None ->
@@ -499,10 +526,12 @@ let sanity_check_header (bhd,bhs) =
     valid_blockheader_signat (bhd,bhs) (blockheader_stakeasset bhd)
   with _ -> false
 
+(* This function creates a commitment tree (ctree) from a block. *)
 let ctree_of_block (b:block) =
   let ((bhd,bhs),bd) = b in
   ctree_cgraft bd.prevledgergraft bhd.prevledger
 
+(* These functions extract all inputs and outputs from a list of signed transactions. *)
 let rec stxs_allinputs stxl =
   match stxl with
   | ((inpl,_),_)::stxr -> inpl @ stxs_allinputs stxr
@@ -519,13 +548,16 @@ let tx_of_block b =
   let (ci,co) = coinstake b in
   (ci @ stxs_allinputs bd.blockdelta_stxl,co @ stxs_alloutputs bd.blockdelta_stxl)
 
+(* This function extracts the coinstake transaction and the list of signed transactions from a block. *)
 let txl_of_block b =
   let (_,bd) = b in
   (coinstake b,List.map (fun (tx,_) -> tx) bd.blockdelta_stxl)
 
+(* This function calculates the Merkle root of a list of signed transactions. *)
 let rec stxl_hashroot stxl =
   merkle_root (List.map hashstx stxl)
 
+(* This function calculates the Merkle root of a blockdelta. *)
 let blockdelta_hashroot bd =
   hashpair
     (hashlist (List.map hash_addr_preasset bd.stakeoutput))
@@ -533,6 +565,7 @@ let blockdelta_hashroot bd =
        (hashcgraft0 bd.prevledgergraft)
        (stxl_hashroot bd.blockdelta_stxl))
 
+(* This function validates a block, considering various aspects such as the block header, transactions, and rewards. *)
 let valid_block_a tht sigt blkh csm tinfo b ((aid,bday,obl,u) as a) p2pkhstkaddr stkaddr lmedtm burned =
   let ((bhd,bhs),bd) = b in
   let pthyaddr = (** address for reward bounty, if there is one **)
@@ -986,6 +1019,7 @@ let valid_block_a tht sigt blkh csm tinfo b ((aid,bday,obl,u) as a) p2pkhstkaddr
   else
     None
 
+(* This function validates a block given its theoretical hash tree (tht), signature tree (sigt), block height (blkh), consensus state machine (csm), transaction info (tinfo), the block itself (b), the median time of the last 11 blocks (lmedtm), the amount burned in the block (burned), and the transaction ID and output index of the pure burn (txid1 and vout1). *)
 let valid_block tht sigt blkh csm tinfo (b:block) lmedtm burned txid1 vout1 =
   let ((bhd,_) as bh,_) = b in
   vbc (fun c -> Printf.fprintf c "Checking if block %s at height %Ld is valid.\n" (hashval_hexstring (blockheader_id bh)) blkh);
@@ -1014,6 +1048,8 @@ let valid_block tht sigt blkh csm tinfo (b:block) lmedtm burned txid1 vout1 =
   | HeaderStakedAssetNotMin -> None
   | HeaderNoStakedAsset -> None
 
+
+(* This function validates a block considering the possibility of a pure burn. *)
 let valid_block_ifburn tht sigt blkh csm tinfo (b:block) lmedtm burned =
   let ((bhd,_) as bh,_) = b in
   vbc (fun c -> Printf.fprintf c "Checking if block %s at height %Ld is valid.\n" (hashval_hexstring (blockheader_id bh)) blkh);
@@ -1041,6 +1077,7 @@ let valid_block_ifburn tht sigt blkh csm tinfo (b:block) lmedtm burned =
 
 let retargetdenom = big_int_of_int (200000 + 3600)
 
+(* This function calculates the new target difficulty based on the current target and the time elapsed since the last block. *)
 (* target 1 hour blocks *)
 let retarget tar deltm =
   min_big_int
@@ -1050,9 +1087,11 @@ let retarget tar deltm =
 	  (big_int_of_int32 (Int32.add 200000l deltm)))
        retargetdenom)
 
+(* This function calculates the difficulty given the current target. *)
 let difficulty tar =
   div_big_int !max_target tar
 
+(* This function checks if a block header is a valid successor to a previous block header. *)
 let blockheader_succ_a prevledgerroot tmstamp1 tinfo1 bh2 =
   let (bhd2,bhs2) = bh2 in
   vbc (fun c -> Printf.fprintf c "Checking if header is valid successor\n");
@@ -1124,3 +1163,4 @@ and collect_header_inv_nbhd_2 m h bhd tosend =
     | Some(k,_) -> collect_header_inv_nbhd (m-1) k tosend
     | _ -> ()
   end
+
