@@ -83,7 +83,7 @@ let assetobl ((h,bd,obl,u):asset) : obligation = obl
 (* The assetpre function extracts the preasset from an asset. *)
 let assetpre ((h,bd,obl,u):asset) : preasset = u
 
-(* The hashpreasset function returns a hash of a preasset. )
+(* The hashpreasset function returns a hash of a preasset. *)
 let hashpreasset u =
   match u with
   | Currency(v) -> hashtag (hashint64 v) 256l
@@ -167,7 +167,7 @@ let rec add_vout bday txh outpl i =
   | (alpha,(obl,u))::outpr -> (alpha,(hashpair txh (hashint32 i),bday,obl,u))::add_vout bday txh outpr (Int32.add i 1l)
 
 (* The preasset_value function calculates the value of a preasset, taking into
-account the current block height and the birthday of the preasset. )
+account the current block height and the birthday of the preasset. *)
 let preasset_value blkh bday u =
   match u with
   | Currency v ->
@@ -713,9 +713,9 @@ let asset_id_hash_table_bkp : (hashval,hashval * hashval * hashval option) Hasht
 
 (* The asset_id_hash_table table stores the current asset ID hash table. *)
 let asset_id_hash_table : (hashval,hashval * hashval * hashval option) Hashtbl.t = Hashtbl.create 10
-let addr_contents_history_table : (hashval,(addr * asset)) Hashtbl.t = Hashtbl.create 10
-let addr_contents_table_bkp : (addr,asset) Hashtbl.t = Hashtbl.create 10
-let addr_contents_table : (addr,asset) Hashtbl.t = Hashtbl.create 10
+let addr_contents_history_table : (hashval,(addr * hashval)) Hashtbl.t = Hashtbl.create 10
+let addr_contents_table_bkp : (addr,hashval) Hashtbl.t = Hashtbl.create 10
+let addr_contents_table : (addr,hashval) Hashtbl.t = Hashtbl.create 10
 let block_txcount_history_table : (hashval,int) Hashtbl.t = Hashtbl.create 10
 let blockheight_history_table : (hashval,int64) Hashtbl.t = Hashtbl.create 10
 (* The spent_table_refreshing flag indicates whether the spent_table is currently being refreshed. *)

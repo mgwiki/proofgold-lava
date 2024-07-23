@@ -6527,9 +6527,9 @@ let rec refresh_explorer_tables_rec lkey =
       (fun (thyh,aid,alpha,beta) -> Hashtbl.replace theory_info thyh (aid,alpha,beta))
       (Hashtbl.find_all theory_history_table lkey);
     List.iter
-      (fun (alpha,a) ->
+      (fun (alpha,ah) ->
         if not (Hashtbl.mem addr_contents_table alpha) then incr addr_count_recompute;
-        Hashtbl.add addr_contents_table alpha a)
+        Hashtbl.add addr_contents_table alpha ah)
       (Hashtbl.find_all addr_contents_history_table lkey);
     List.iter
       (fun (aid,ah,pfgbh,otx) -> Hashtbl.replace asset_id_hash_table aid (ah,pfgbh,otx))
@@ -6765,7 +6765,7 @@ let rec init_explorer_tables_rec lkey =
   let handle_out otx (alpha,(aid,bday,obl,u)) =
     let ah = hashasset (aid,bday,obl,u) in
     Hashtbl.add asset_id_hash_history lkey (aid,ah,pfgbh,otx);
-    Hashtbl.add addr_contents_history_table lkey (alpha,(aid,bday,obl,u));
+    Hashtbl.add addr_contents_history_table lkey (alpha,ah);
     match u with
     | Bounty(v) ->
        Hashtbl.add bounty_history_table lkey (bday,alpha,aid,v,pfgbh,otx)
