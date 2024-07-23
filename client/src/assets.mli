@@ -128,9 +128,9 @@ val asset_id_hash_history : (hashval,hashval * hashval * hashval * hashval optio
 val asset_id_hash_refreshing : bool ref
 val asset_id_hash_table_bkp : (hashval,hashval * hashval * hashval option) Hashtbl.t
 val asset_id_hash_table : (hashval,hashval * hashval * hashval option) Hashtbl.t
-val addr_contents_history_table : (hashval,(addr * asset)) Hashtbl.t
-val addr_contents_table_bkp : (addr, asset) Hashtbl.t
-val addr_contents_table : (addr,asset) Hashtbl.t
+val addr_contents_history_table : (hashval,(addr * hashval)) Hashtbl.t
+val addr_contents_table_bkp : (addr, hashval) Hashtbl.t
+val addr_contents_table : (addr,hashval) Hashtbl.t
 val block_txcount_history_table : (hashval,int) Hashtbl.t
 val blockheight_history_table : (hashval,int64) Hashtbl.t
 val spent_table_refreshing : bool ref

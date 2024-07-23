@@ -42,7 +42,7 @@ let extend_explorer_info lkey pfgbh bhd bd blkhght =
   let handle_out otx (alpha,(aid,bday,obl,u)) =
     let ah = hashasset (aid,bday,obl,u) in
     Hashtbl.add asset_id_hash_history lkey (aid,ah,pfgbh,otx);
-    Hashtbl.add addr_contents_history_table lkey (alpha,(aid,bday,obl,u));
+    Hashtbl.add addr_contents_history_table lkey (alpha,ah);
     match u with
     | Bounty(v) ->
        Hashtbl.add bounty_history_table lkey (bday,alpha,aid,v,pfgbh,otx)

@@ -975,7 +975,8 @@ let assets_at_address_in_ledger_json raiseempty alpha par ledgerroot blkh =
   begin
     let add_previous_assets jpal jpalcnt =
       List.iter
-        (fun ((aid,bday,obl,u) as a) ->
+        (fun ah ->
+          let ((aid,bday,obl,u) as a) = DbAsset.dbget ah in
           if !jpalcnt < 10 then
             if Hashtbl.mem (if !spent_table_refreshing then spent_table_bkp else spent_table) aid then
               (incr jpalcnt; jpal := json_asset a::!jpal))
