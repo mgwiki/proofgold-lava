@@ -723,7 +723,7 @@ let recently_sent (i,h) nw isnt =
       (Hashtbl.remove isnt (i,h);
        false)
   with Not_found -> false
-  
+
 let find_and_send_requestmissingblocks cs =
   if not (!missingheaders = [] && !missingdeltas = []) then
     let i = int_of_msgtype GetHeader in
@@ -760,7 +760,19 @@ let find_and_send_requestmissingblocks cs =
 	    let _ (* mh *) = queue_msg cs GetHeaders ms in
 	    ()
 	  end;
-	match !missingdeltas with
+        List.iter
+          (fun (blkh,h) ->
+            if (((blkh >= cs.first_full_height) && (blkh <= cs.last_height)) || Hashtbl.mem cs.rinv (dii,h)) && not (recently_requested (di,h) tm cs.invreq) then
+              begin
+		let msb = Buffer.create 100 in
+		seosbf (seo_hashval seosb h (msb,None));
+		let ms = Buffer.contents msb in
+		Hashtbl.replace cs.invreq (di,h) tm;
+		ignore (queue_msg cs GetBlockdelta ms)
+              end
+          )
+          !missingdeltas;
+(*	match !missingdeltas with
 	| ((blkh,h)::_) ->
 	    if (((blkh >= cs.first_full_height) && (blkh <= cs.last_height)) || Hashtbl.mem cs.rinv (dii,h)) && not (recently_requested (di,h) tm cs.invreq) then
 	      begin
@@ -770,7 +782,7 @@ let find_and_send_requestmissingblocks cs =
 		Hashtbl.replace cs.invreq (di,h) tm;
 		ignore (queue_msg cs GetBlockdelta ms)
 	      end
-	| _ -> ()
+	| _ -> () *)
       end;;
 
 let send_addrs yesterday cs =
