@@ -2748,7 +2748,6 @@ let initialize_commands () =
 				      let al = ref [(markerid,bday,obl,Marker)] in
 				      let txinlr = ref [(beta,markerid)] in
 				      let txoutlr = ref [(delta,(None,DocPublication(gammap,nonce,th,dl)))] in
-                                      let revisituses = ref [] in
 				      let usesobjs = doc_uses_objs dl in
 				      let usesprops = doc_uses_props dl in
 				      let createsobjs = doc_creates_objs dl in
@@ -2759,8 +2758,8 @@ let initialize_commands () =
 				      List.iter
 					(fun (alpha,a,v) ->
 					  match a with
-					  | (_,_,_,RightsObj(h,_)) -> Hashtbl.add objrightsassets h (alpha,a)
-					  | (_,_,_,RightsProp(h,_)) -> Hashtbl.add proprightsassets h (alpha,a)
+					  | (_,_,_,RightsObj(h,cnt)) when cnt > 0L -> Hashtbl.add objrightsassets h (alpha,a)
+					  | (_,_,_,RightsProp(h,cnt)) when cnt > 0L -> Hashtbl.add proprightsassets h (alpha,a)
 					  | _ -> ())
 					(Commands.get_spendable_assets_in_ledger oc lr blkh);
 				      let oname h =
@@ -2781,18 +2780,35 @@ let initialize_commands () =
 					  let (beta,r) = local_lookup_obj_thy_owner lr remgvtpth oidthy alphathy in
 					  begin
 					    match r with
-					    | None -> raise (Failure (Printf.sprintf "No right to use theory object '%s' %s. It must be redefined." (oname oidpure) (hashval_hexstring oidthy)))
+					    | None ->
+                                               begin
+                                                 try
+                                                   let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find objrightsassets oidthy in
+                                                   match rghtspreast with
+                                                   | RightsObj(h,cnt) ->
+                                                      txinlr := (xi,rghtsaid)::!txinlr;
+                                                      if cnt > 0L then
+                                                        txoutlr := (xi,(obl,RightsObj(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                   | _ -> raise (Failure (Printf.sprintf "Problem with rights to use theory object '%s' %s." (oname oidpure) (hashval_hexstring oidthy)))
+                                                 with Not_found ->
+                                                   raise (Failure (Printf.sprintf "No right to use theory object '%s' %s. It must be redefined." (oname oidpure) (hashval_hexstring oidthy)))
+                                               end
 					    | Some(i) when i > 0L -> (*** look for owned rights; if not increase 'tospend' to buy the rights ***)
 					       begin
-                                                 revisituses := (false,oidthy,beta,i)::!revisituses;
-                                                 if Hashtbl.mem objrightsassets oidthy then
-                                                   begin
-                                                     try
-                                                       let i2 = Hashtbl.find addrh beta in
-                                                       if i > i2 then Hashtbl.replace addrh beta i
-                                                     with Not_found ->
-                                                       Hashtbl.add addrh beta i
-                                                   end
+                                                 try
+                                                   let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find objrightsassets oidthy in
+                                                   match rghtspreast with
+                                                   | RightsObj(h,cnt) ->
+                                                      txinlr := (xi,rghtsaid)::!txinlr;
+                                                      if cnt > 0L then
+                                                        txoutlr := (xi,(obl,RightsObj(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                   | _ -> raise Not_found
+                                                 with Not_found ->
+                                                   try
+                                                     let i2 = Hashtbl.find addrh beta in
+                                                     if i > i2 then Hashtbl.replace addrh beta i
+                                                   with Not_found ->
+                                                     Hashtbl.add addrh beta i
                                                end
 					    | _ -> ()
 					  end;
@@ -2802,18 +2818,35 @@ let initialize_commands () =
 					    | None -> raise (Failure (Printf.sprintf "** Somehow the theory object has an owner but the pure object %s (%s) did not. Invariant failure. **" (hashval_hexstring oidpure) (addr_pfgaddrstr alphapure)))
 					    | Some(beta,r) ->
 						match r with
-						| None -> raise (Failure (Printf.sprintf "No right to use pure object '%s' %s. It must be redefined." (oname oidpure) (hashval_hexstring oidpure)))
+						| None ->
+                                                   begin
+                                                     try
+                                                       let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find objrightsassets oidpure in
+                                                       match rghtspreast with
+                                                       | RightsObj(h,cnt) ->
+                                                          txinlr := (xi,rghtsaid)::!txinlr;
+                                                          if cnt > 0L then
+                                                            txoutlr := (xi,(obl,RightsObj(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                       | _ -> raise (Failure (Printf.sprintf "Problem with rights to use pure object '%s' %s." (oname oidpure) (hashval_hexstring oidpure)))
+                                                     with Not_found ->
+                                                       raise (Failure (Printf.sprintf "No right to use pure object '%s' %s. It must be redefined." (oname oidpure) (hashval_hexstring oidpure)))
+                                                   end
 						| Some(i) when i > 0L -> (*** look for owned rights; if not increase 'tospend' to buy the rights ***)
 					           begin
-                                                     revisituses := (false,oidpure,beta,i)::!revisituses;
-                                                     if Hashtbl.mem objrightsassets oidpure then
-                                                       begin
-                                                         try
-                                                           let i2 = Hashtbl.find addrh beta in
-                                                           if i > i2 then Hashtbl.replace addrh beta i
-                                                         with Not_found ->
-                                                           Hashtbl.add addrh beta i
-                                                       end
+                                                     try
+                                                       let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find objrightsassets oidpure in
+                                                       match rghtspreast with
+                                                       | RightsObj(h,cnt) ->
+                                                          txinlr := (xi,rghtsaid)::!txinlr;
+                                                          if cnt > 0L then
+                                                            txoutlr := (xi,(obl,RightsObj(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                       | _ -> raise Not_found
+                                                     with Not_found ->
+                                                       try
+                                                         let i2 = Hashtbl.find addrh beta in
+                                                         if i > i2 then Hashtbl.replace addrh beta i
+                                                       with Not_found ->
+                                                         Hashtbl.add addrh beta i
                                                    end
 						| _ -> ()
 					  end)
@@ -2826,18 +2859,35 @@ let initialize_commands () =
 					  let (beta,r) = local_lookup_prop_thy_owner lr remgvknth pidthy alphathy in
 					  begin
 					    match r with
-					    | None -> raise (Failure (Printf.sprintf "No right to use theory proposition '%s' %s. It must be reproven." (pname pidpure) (hashval_hexstring pidthy)))
+					    | None ->
+                                               begin
+                                                 try
+                                                   let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find proprightsassets pidthy in
+                                                   match rghtspreast with
+                                                   | RightsProp(h,cnt) ->
+                                                      txinlr := (xi,rghtsaid)::!txinlr;
+                                                      if cnt > 0L then
+                                                        txoutlr := (xi,(obl,RightsProp(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                   | _ -> raise (Failure (Printf.sprintf "Problem with rights to use theory proposition '%s' %s." (oname pidpure) (hashval_hexstring pidthy)))
+                                                 with Not_found ->
+                                                   raise (Failure (Printf.sprintf "No right to use theory proposition '%s' %s. It must be reproven." (pname pidpure) (hashval_hexstring pidthy)))
+                                               end
 					    | Some(i) when i > 0L -> (*** look for owned rights; if not increase 'tospend' to buy the rights ***)
 						begin
-                                                  revisituses := (true,pidthy,beta,i)::!revisituses;
-                                                  if Hashtbl.mem proprightsassets pidthy then
-                                                    begin
-						      try
-                                                        let i2 = Hashtbl.find addrh beta in
-                                                        if i > i2 then Hashtbl.replace addrh beta i
-                                                      with Not_found ->
-                                                        Hashtbl.add addrh beta i
-                                                    end
+                                                  try
+                                                    let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find proprightsassets pidthy in
+                                                    match rghtspreast with
+                                                    | RightsProp(h,cnt) ->
+                                                       txinlr := (xi,rghtsaid)::!txinlr;
+                                                       if cnt > 0L then
+                                                         txoutlr := (xi,(obl,RightsProp(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                    | _ -> raise (Failure (Printf.sprintf "Problem with rights to use theory proposition '%s' %s." (oname pidpure) (hashval_hexstring pidthy)))
+                                                  with Not_found ->
+						    try
+                                                      let i2 = Hashtbl.find addrh beta in
+                                                      if i > i2 then Hashtbl.replace addrh beta i
+                                                    with Not_found ->
+                                                      Hashtbl.add addrh beta i
 						end
 					    | _ -> ()
 					  end;
@@ -2847,18 +2897,35 @@ let initialize_commands () =
 					    | None -> raise (Failure (Printf.sprintf "** Somehow the theory proposition has an owner but the pure object %s (%s) did not. Invariant failure. **" (hashval_hexstring pidpure) (addr_pfgaddrstr alphapure)))
 					    | Some(beta,r) ->
 						match r with
-						| None -> raise (Failure (Printf.sprintf "No right to use pure proposition '%s' %s. It must be reproven." (pname pidpure) (hashval_hexstring pidpure)))
+						| None ->
+                                                   begin
+                                                     try
+                                                       let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find proprightsassets pidpure in
+                                                       match rghtspreast with
+                                                       | RightsProp(h,cnt) ->
+                                                          txinlr := (xi,rghtsaid)::!txinlr;
+                                                          if cnt > 0L then
+                                                            txoutlr := (xi,(obl,RightsProp(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                       | _ -> raise (Failure (Printf.sprintf "Problem with rights to use pure proposition '%s' %s." (oname pidpure) (hashval_hexstring pidpure)))
+                                                     with Not_found ->
+                                                       raise (Failure (Printf.sprintf "No right to use pure proposition '%s' %s. It must be reproven." (pname pidpure) (hashval_hexstring pidpure)))
+                                                   end
 						| Some(i) when i > 0L -> (*** look for owned rights; if not increase 'tospend' to buy the rights ***)
 						   begin
-                                                     revisituses := (true,pidpure,beta,i)::!revisituses;
-                                                     if Hashtbl.mem proprightsassets pidpure then
-                                                       begin
-						         try
-                                                           let i2 = Hashtbl.find addrh beta in
-                                                           if i > i2 then Hashtbl.replace addrh beta i
-                                                         with Not_found ->
-                                                           Hashtbl.add addrh beta i
-                                                       end
+                                                     try
+                                                       let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find proprightsassets pidpure in
+                                                       match rghtspreast with
+                                                       | RightsProp(h,cnt) ->
+                                                          txinlr := (xi,rghtsaid)::!txinlr;
+                                                          if cnt > 0L then
+                                                            txoutlr := (xi,(obl,RightsProp(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                       | _ -> raise (Failure (Printf.sprintf "Problem with rights to use theory proposition '%s' %s." (oname pidpure) (hashval_hexstring pidpure)))
+                                                     with Not_found ->
+						       try
+                                                         let i2 = Hashtbl.find addrh beta in
+                                                         if i > i2 then Hashtbl.replace addrh beta i
+                                                       with Not_found ->
+                                                         Hashtbl.add addrh beta i
 						   end
 						| _ -> ()
 					  end)
@@ -2868,38 +2935,6 @@ let initialize_commands () =
                                           tospend := Int64.add !tospend m;
                                           txoutlr := (payaddr_addr beta,(None,Currency(m)))::!txoutlr)
                                         addrh;
-                                      List.iter
-                                        (fun (b1,h1,beta1,i1) ->
-                                          try
-                                            let i2 = Hashtbl.find addrh beta1 in
-                                            if i2 < i1 then raise Not_found;
-                                          with Not_found ->
-                                            try
-                                              let (alpha,a) = Hashtbl.find (if b1 then proprightsassets else objrightsassets) h1 in
-					      match a with
-					      | (aid,bday,obl,RightsObj(h,r)) when not b1 ->
-						 if r > 0L then
-						   begin
-						     al := a::!al;
-						     txinlr := (alpha,aid)::!txinlr;
-                                                     if r > 1L then txoutlr := (alpha,(obl,RightsObj(h,Int64.sub r 1L)))::!txoutlr;
-                                                   end
-                                                 else
-                                                   raise Not_found
-					      | (aid,bday,obl,RightsProp(h,r)) when b1 ->
-						 if r > 0L then
-						   begin
-						     al := a::!al;
-						     txinlr := (alpha,aid)::!txinlr;
-                                                     if r > 1L then txoutlr := (alpha,(obl,RightsProp(h,Int64.sub r 1L)))::!txoutlr;
-                                                   end
-                                                 else
-                                                   raise Not_found
-                                              | _ ->
-                                                 raise Not_found
-                                            with Not_found ->
-                                              raise (Failure (Printf.sprintf "Problem obtaining rights for %s" (hashval_hexstring h1))))
-                                        !revisituses;
 				      List.iter
 					(fun (h,k) ->
 					  let oidpure = h in
