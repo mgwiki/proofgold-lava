@@ -43,6 +43,7 @@ let extend_explorer_info lkey pfgbh bhd bd blkhght =
     let ah = hashasset (aid,bday,obl,u) in
     Hashtbl.add asset_id_hash_history lkey (aid,ah,pfgbh,otx);
     Hashtbl.add addr_contents_history_table lkey (alpha,ah);
+    (match preasset_units u with None -> () | Some(v) -> if v < 0L then Utils.log_string (Printf.sprintf "NegativeWarning: Asset id %s\n" (hashval_hexstring aid)));
     match u with
     | Bounty(v) ->
        Hashtbl.add bounty_history_table lkey (bday,alpha,aid,v,pfgbh,otx)

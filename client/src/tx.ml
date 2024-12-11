@@ -584,12 +584,24 @@ let tx_signatures_valid blkh tm al stau =
       | (Some(bh2),None) -> bh2 <= blkh
       | (None,Some(tm2)) -> tm2 <= tm
       | (None,None) -> true
-    else
+    else if blkh < Utils.rightsfixsoftforkheight then
       match (mbhb,mtm) with
       | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
       | (Some(bh2),None) -> bh2 <= blkh
       | (None,Some(tm2)) -> tm2 <= tm
       | (None,None) -> true
+    else
+      begin
+        let ((_,tauout),_) = stau in
+        if List.exists (fun (alpha,(_,u)) -> match preasset_units u with Some(u) when u < 0L -> true | _ -> false) tauout then
+          false (** negative rights units; reject as invalid; doing it here since have the blk height to check if it's after the soft fork **)
+        else
+          match (mbhb,mtm) with
+          | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
+          | (Some(bh2),None) -> bh2 <= blkh
+          | (None,Some(tm2)) -> tm2 <= tm
+          | (None,None) -> true
+      end
   with BadOrMissingSignature -> false
 
 (* Update an obligation tree with the theories published in a transaction's outputs. *)

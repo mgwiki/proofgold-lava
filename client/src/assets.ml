@@ -193,6 +193,18 @@ let asset_value blkh u = preasset_value blkh (assetbday u) (assetpre u)
 let asset_value_sum blkh al =
   List.fold_left Int64.add 0L (List.map (fun a -> match asset_value blkh a with Some v -> v | None -> 0L) al)
 
+let preasset_units u =
+  match u with
+  | Currency(v) -> Some(v)
+  | Bounty(v) -> Some(v)
+  | OwnsObj(_,_,vo) -> vo
+  | OwnsProp(_,_,vo) -> vo
+  | RightsObj(_,v) -> Some(v)
+  | RightsProp(_,v) -> Some(v)
+  | _ -> None
+
+let asset_units u = preasset_units (assetpre u)
+
 (* The output_signaspec_uses_objs function returns a list of object-theory pairs
 representing the objects used by the signatures in a list of addr_preassetpairs. *)
 let rec output_signaspec_uses_objs (outpl:addr_preasset list) : (hashval * hashval) list =

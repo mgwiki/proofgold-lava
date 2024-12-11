@@ -134,6 +134,7 @@ let rand_int64 () =
 let late2020hardforkheight1 = 5000L
 let late2020hardforkheight2 = 15000L
 let lockingfixsoftforkheight = 13500L
+let rightsfixsoftforkheight = 40000L
 
 (* Decodes a base64-encoded string. *)
 (*** Following code in util.cpp in bitcoin ***)
