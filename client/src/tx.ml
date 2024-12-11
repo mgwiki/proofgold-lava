@@ -191,13 +191,17 @@ let rec tx_outputs_valid_addr_cats_oc oc outpl =
 let tx_outputs_valid (outpl: addr_preasset list) =
   tx_outputs_valid_one_owner outpl [] [] []
     &&
-  tx_outputs_valid_addr_cats outpl 
+  tx_outputs_valid_addr_cats outpl
+    &&
+  not (List.exists (fun (alpha,(_,u)) -> match preasset_units u with Some(u) when u < 0L -> true | _ -> false) outpl)
 
 (* Check whether a transaction's outputs are valid by ensuring that there is at most one owner for each object/proposition and that ownership deeds are sent to term addresses and publications are sent to publication addresses, and print an error message if there are any violations. *)
 let tx_outputs_valid_oc oc (outpl: addr_preasset list) =
   tx_outputs_valid_one_owner_oc oc outpl [] [] []
     &&
   tx_outputs_valid_addr_cats_oc oc outpl 
+    &&
+  not (List.exists (fun (alpha,(_,u)) -> match preasset_units u with Some(u) when u < 0L -> true | _ -> false) outpl)
 
 (* Check whether a transaction is valid by checking that its inputs and outputs are valid. *)
 let tx_valid tau = tx_inputs_valid (tx_inputs tau) && tx_outputs_valid (tx_outputs tau)
