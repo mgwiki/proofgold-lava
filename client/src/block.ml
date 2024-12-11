@@ -618,7 +618,7 @@ let valid_block_a tht sigt blkh csm tinfo b ((aid,bday,obl,u) as a) p2pkhstkaddr
 		         &&
 		           begin
 		             try (*** all other outputs must be marked as rewards; they also must acknowledge they cannot be spent for at least reward_locktime many blocks ***)
-		               ignore (List.find (fun (alpha3,(obl,v)) -> match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_locktime -> false | _ -> true) remouts);
+		               ignore (List.find (fun (alpha3,(obl,v)) -> match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_locktime -> (match preasset_units v with Some(u) when u < 0L -> true | _ -> false) | _ -> true) remouts);
 		               false
 		             with Not_found -> true
 		           end
