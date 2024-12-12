@@ -17,7 +17,6 @@ val maxblockdeltasize : int64 -> int
 val late2020hardforkheight1 : int64
 val late2020hardforkheight2 : int64
 val lockingfixsoftforkheight : int64
-val rightsfixsoftforkheight : int64
 
 val random_initialized : bool ref
 val initialize_random_seed : unit -> unit
