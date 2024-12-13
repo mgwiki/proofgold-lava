@@ -7407,6 +7407,14 @@ let main () =
 	  Printf.fprintf stdout "Ignoring Uncaught Failure: %s\n" x; flush stdout;
 (**	  failure_delay() **)
       | BannedPeer -> Printf.fprintf stdout "Banned Peer"
+      | StakingPauseMsg(del,msg) ->
+	 Printf.fprintf stdout "Staking pause of %f seconds: %s\n" del msg
+      | StakingPause(del) ->
+	 Printf.fprintf stdout "Staking pause of %f seconds\n" del
+      | StakingProblemPause ->
+	 Printf.fprintf stdout "Staking problem exception.\n"
+      | StakingPublishBlockPause ->
+	 Printf.fprintf stdout "Staking problem block exception.\n"
       | exn -> (*** unexpected ***)
 	  Printf.fprintf stdout "Ignoring Uncaught Exception: %s\n" (Printexc.to_string exn); flush stdout;
 (**	  failure_delay() **)

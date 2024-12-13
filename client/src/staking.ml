@@ -203,6 +203,7 @@ let rec hlist_stakingassets blkh alpha hl n =
 
 let extraburn : int64 ref = ref 0L;;
 
+exception StakingPauseMsg of float * string
 exception StakingPause of float
 exception StakingProblemPause
 exception StakingPublishBlockPause
@@ -265,7 +266,13 @@ let compute_staking_chances (prevblkh,lbk,ltx) fromtm totm =
 	        | _ -> ())
 	    !Commands.walletendorsements;
           log_string (Printf.sprintf "%d staking assets\n" (List.length !Commands.stakingassets));
-          let lul = ltc2_listunspent () in
+          let lul =
+            try
+              ltc2_listunspent ()
+            with Not_found ->
+              log_string (Printf.sprintf "Staking thread could not get unspent txs from second ltc node. Make sure config params like ltcrpcuser2 and ltcrpcpass2 are set correctly (e.g., in your proofgold.conf file). If you are only running one ltc node, the values of ltcrpcuser2 and ltcrpcpass2 should be the same as the values of ltcrpcuser and ltcrpcpass. Delaying staking thread for one hour in case this is a temporary problem connecting to the second ltc node.");
+              raise (StakingPauseMsg(3600.0,"Doublecheck config params like ltcrpcuser2 and ltcrpcpass2 for connection to second ltc node (the one for spending)"))
+          in
           if not (!Commands.stakingassets = []) || not (lul = []) then
 	    let nextstake i stkaddr h bday obl v toburn =
 	      Hashtbl.add nextstakechances (lbk,ltx) (NextStake(i,stkaddr,h,bday,obl,v,toburn,ref None,thyroot,thytree,sigroot,sigtree));
@@ -375,12 +382,17 @@ let compute_staking_chances (prevblkh,lbk,ltx) fromtm totm =
 	    with
 	    | Exit ->
                ()
+            | StakingPause(del) -> raise (StakingPause(del))
+            | StakingPauseMsg(del,msg) -> raise (StakingPauseMsg(del,msg))
 	    | exn ->
 	       log_string (Printf.sprintf "Unexpected Exception in Staking Loop: %s\n" (Printexc.to_string exn))
       end
     else
       raise Not_found
-  with exn ->
+  with
+  | StakingPauseMsg(del,msg) -> raise (StakingPauseMsg(del,msg))
+  | StakingPause(del) -> raise (StakingPause(del))
+  | exn ->
     log_string (Printf.sprintf "Unexpected Exception in Staking: %s\n" (Printexc.to_string exn));
     raise StakingProblemPause
         
@@ -1828,6 +1840,10 @@ let stakingthread () =
 	     sleepuntil := ltc_medtime()
 	 end
     with
+    | StakingPauseMsg(del,msg) ->
+	log_string (Printf.sprintf "Staking pause of %f seconds: %s\n" del msg);
+	Thread.delay del;
+	sleepuntil := ltc_medtime()
     | StakingPause(del) ->
 	log_string (Printf.sprintf "Staking pause of %f seconds\n" del);
 	Thread.delay del;

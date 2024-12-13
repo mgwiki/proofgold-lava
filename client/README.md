@@ -86,8 +86,22 @@ Now create a file `proofgold.conf` in your proofgold data directory.
 ltcrpcuser=litecoinrpcusername
 ltcrpcpass=replacewithrealpassword
 ltcrpcport=9332
+ltcrpcuser2=litecoinrpcusername
+ltcrpcpass2=replacewithrealpassword
+ltcrpcport2=9332
 ltcaddress=yourltcsegwitaddress
 ```
+
+In the example above, ltcrpcuser2, ltcrpcpass2 and ltcrpcport2
+are given the same values as ltcrpcuser, ltcrpcpass and ltcrpcport
+so that they refer to the same ltc node. In principle parameters
+like ltcrpc[user|pass|port]2 can refer to a different
+ltc node than ltcrpcuser[user|pass|port]. If so, ltcrpc[user|pass|port]2
+should refer to the ltc node with a nonempty wallet (if you plan to stake,
+swap or send alerts). Note that this also applies to the configuration
+parameters ltcrpcip, ltcrpcip2, ltcrpconion and ltcrpconion2
+if one or both of your ltc nodes is running on a different machine or
+as a hidden service.
 
 There are many other configuration parameters you might want to set
 in `proofgold.conf` (see `src/setconfig.ml`).  The ones above should suffice for proofgold
