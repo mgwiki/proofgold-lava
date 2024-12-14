@@ -2478,11 +2478,12 @@ let savetxtopool blkh tm lr staustr =
   else
     Printf.printf "Invalid tx\n"
 
-let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
+let validatetx4 blkh tm thtr sgtr ltr txbytes stau transform =
   let ((tauin,tauout) as tau,tausg) = stau in
-  if tx_valid_oc oc tau then
+  if tx_valid tau then
     begin
-      let unsupportederror alpha h = Printf.fprintf oc "Could not find asset %s at address %s in ledger %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha) (hashval_hexstring (ctree_hashroot ltr)) in
+      let unsupportederror alpha h = ()
+      in
       let retval () =
 	if transform then
 	  begin
@@ -2490,7 +2491,58 @@ let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
 	      match tx_octree_trans true false blkh tau (Some(ltr)) with
 	      | None -> None
 	      | Some(ltr2) -> Some(txout_update_ottree tauout thtr,txout_update_ostree tauout sgtr,ltr2)
-	    with exn -> Printf.fprintf oc "Tx transformation problem %s\n" (Printexc.to_string exn); flush oc; None
+	    with exn -> None
+	  end
+	else
+	  None
+      in
+      let validatetx_report() =
+	let stxh = hashstx stau in
+	begin
+	  try
+	    verbose_supportedcheck := None;
+	    let nfee = ctree_supports_tx (ref 0) true true false thtr sgtr blkh tau ltr in
+	    verbose_supportedcheck := None;
+	    retval()
+	  with
+	  | NotSupported ->
+	      verbose_supportedcheck := None;
+	      None
+	  | exn ->
+	      verbose_supportedcheck := None;
+	      None
+	end
+      in
+      let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin ltr unsupportederror) in
+      try
+	let (mbha,mbhb,mtm) = tx_signatures_valid_asof_blkh al (tau,tausg) in
+        let mbh = if blkh < Utils.lockingfixsoftforkheight then mbha else mbhb in
+        validatetx_report()
+      with
+      | BadOrMissingSignature ->
+	  validatetx_report()
+      | e ->
+	  validatetx_report()
+    end
+  else
+    None
+
+let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
+  let ((tauin,tauout) as tau,tausg) = stau in
+  if tx_valid_oc oc tau then
+    begin
+      let unsupportederror alpha h =
+        Printf.fprintf oc "Could not find asset %s at address %s in ledger %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha) (hashval_hexstring (ctree_hashroot ltr))
+      in
+      let retval () =
+	if transform then
+	  begin
+	    try
+	      match tx_octree_trans true false blkh tau (Some(ltr)) with
+	      | None -> None
+	      | Some(ltr2) -> Some(txout_update_ottree tauout thtr,txout_update_ostree tauout sgtr,ltr2)
+	    with exn ->
+                  Printf.fprintf oc "Tx transformation problem %s\n" (Printexc.to_string exn); flush oc; None
 	  end
 	else
 	  None
@@ -2575,7 +2627,11 @@ let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
     (Printf.fprintf oc "Invalid tx\n"; None)
 
 let validatetx2 oc blkh tm tr sr lr txbytes stau =
-  ignore (validatetx3 oc blkh tm (lookup_thytree tr) (lookup_sigtree sr) (CHash(lr)) txbytes stau false)
+  match oc with
+  | Some(oc) ->
+     ignore (validatetx3 oc blkh tm (lookup_thytree tr) (lookup_sigtree sr) (CHash(lr)) txbytes stau false)
+  | None ->
+     ignore (validatetx4 blkh tm (lookup_thytree tr) (lookup_sigtree sr) (CHash(lr)) txbytes stau false)
 
 let validatebatchtxs oc blkh tm tr sr lr staul =
   let i = ref 0 in
@@ -2602,7 +2658,7 @@ let validatetx oc blkh tm tr sr lr staustr =
   let s = hexstring_string staustr in
   let l = String.length s in
   let (stau,_) = sei_stx seis (s,l,None,0,0) in
-  validatetx2 oc blkh tm tr sr lr l stau
+  validatetx2 (Some(oc)) blkh tm tr sr lr l stau
 
 let sendtx2 oc blkh tm tr sr lr txbytes stau =
   let ((tauin,tauout) as tau,tausg) = stau in

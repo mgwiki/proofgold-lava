@@ -1015,14 +1015,14 @@ let resend_txpool oc =
        (fun (k,stau) ->
          try
            let sz = stxsize stau in
-           Commands.validatetx2 oc (Int64.add 1L blkh) tm tr sr lr sz stau;
+           Commands.validatetx2 None (Int64.add 1L blkh) tm tr sr lr sz stau;
            if !cnt < 65536 then
              (txinv := (int_of_msgtype STx,k)::!txinv; incr cnt)
          with exn ->
-           Printf.fprintf oc "Removing %s\n" (hashval_hexstring k);
-               Hashtbl.remove stxpool k)
-           !tmp;
-         broadcast_inv !txinv
+           Utils.log_string (Printf.sprintf "Removing %s\n" (hashval_hexstring k));
+           Hashtbl.remove stxpool k)
+       !tmp;
+     broadcast_inv !txinv
 
 let initialize_commands () =
   ac "version" "version" "Print client description and version number"
@@ -6018,7 +6018,7 @@ let initialize_commands () =
 		      if txbytes > 450000 then
 			Printf.fprintf oc "Tx is > 450K bytes and will be considered too big to include in a block\n"
 		      else
-			Commands.validatetx2 oc (Int64.add 1L blkh) tm tr sr lr txbytes stau
+			Commands.validatetx2 (Some(oc)) (Int64.add 1L blkh) tm tr sr lr txbytes stau
 		    with exn ->
 		      Printf.fprintf oc "Trouble validating tx %s\n" (Printexc.to_string exn)
 		  with Not_found ->

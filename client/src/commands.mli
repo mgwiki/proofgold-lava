@@ -71,7 +71,7 @@ val savetxtopool : int64 -> int64 -> hashval -> string -> unit
 val signtx : out_channel -> hashval -> string -> (int list * p2shaddr) list -> (hashval * hashval) list -> (Z.t * bool * (Z.t * Z.t) * p2pkhaddr) list option -> unit
 val simplesigntx : out_channel -> string -> (int list * p2shaddr) list -> (hashval * hashval) list -> (Z.t * bool * (Z.t * Z.t) * p2pkhaddr) list option -> unit
 val validatebatchtxs : out_channel -> int64 -> int64 -> hashval option -> hashval option -> hashval -> stx list -> unit
-val validatetx2 : out_channel -> int64 -> int64 -> hashval option -> hashval option -> hashval -> int -> stx -> unit
+val validatetx2 : out_channel option -> int64 -> int64 -> hashval option -> hashval option -> hashval -> int -> stx -> unit
 val validatetx : out_channel -> int64 -> int64 -> hashval option -> hashval option -> hashval -> string -> unit
 val sendtx2 : out_channel -> int64 -> int64 -> hashval option -> hashval option -> hashval -> int -> stx -> unit
 val sendtx : out_channel -> int64 -> int64 -> hashval option -> hashval option -> hashval -> string -> unit
