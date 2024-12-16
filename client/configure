@@ -106,7 +106,7 @@ echo let db_max_in_cache = ref 100000 >> src/config.ml
 echo let min_conns_pow = ref 2 >> src/config.ml
 echo let min_conn_pow_target = ref 65536l >> src/config.ml
 echo let max_conn_pow_tries = ref 1000000 >> src/config.ml
-echo let explorer = ref true >> src/config.ml
+echo let explorer = ref false >> src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"
