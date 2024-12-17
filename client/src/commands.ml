@@ -2145,7 +2145,7 @@ let rec signtx_ins rdmscrl secrl kl taue inpl al outpl sl rl (rsl:gensignat_or_r
 			    let obl = assetobl a in
 			    let (s1,rl1) = getsig s rl in
 			    begin
-			      let (b,_,_,_) = check_spend_obligation_upto_blkh (Some(bday)) alpha taue s1 obl in (*** allow signing now even if it cannot be confirmed until later ***)
+			      let (b,_,_,_,_) = check_spend_obligation_upto_blkh (Some(bday)) alpha taue s1 obl in (*** allow signing now even if it cannot be confirmed until later ***)
 			      if b then
 				match obl with
 				| None -> 
@@ -2225,11 +2225,11 @@ let rec signtx_ins rdmscrl secrl kl taue inpl al outpl sl rl (rsl:gensignat_or_r
 		try
 		  let (s1,rl1) = getsig s rl in
 		  let (p,av) = alpha in
-		  let (b,_,_,_) =
+		  let (b,_,_,_,_) =
 		    try
 		      check_spend_obligation_upto_blkh (Some(bday)) alpha taue s1 obl (*** allow signing now even if it cannot be confirmed until later ***)
 		    with BadOrMissingSignature ->
-		      (false,None,None,None)
+		      (false,None,None,None,[])
 		  in
 		  if b then
 		    begin
@@ -2306,7 +2306,7 @@ let rec signtx_outs rdmscrl secrl kl taue outpl sl rl rsl co =
 	| (Some(s)::sr) ->
 	    begin
 	      let (s1,rl1) = getsig s rl in
-	      let (b,_,_,_) = check_spend_obligation_upto_blkh None (payaddr_addr alpha) taue s1 None in
+	      let (b,_,_,_,_) = check_spend_obligation_upto_blkh None (payaddr_addr alpha) taue s1 None in
 	      if b then
 		signtx_outs rdmscrl secrl kl taue outpr sr (rl1 alpha) (Some(GenSignatReal(s1))::rsl) co
 	      else
@@ -2470,11 +2470,14 @@ let savetxtopool blkh tm lr staustr =
   if tx_valid tau then
     let unsupportederror alpha h = Printf.printf "Could not find asset %s at address %s in ledger %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha) (hashval_hexstring lr) in
     let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin (CHash(lr)) unsupportederror) in
-    if tx_signatures_valid blkh tm al (tau,tausg) then
-      let txid = hashstx (tau,tausg) in
-      savetxtopool_real txid (tau,tausg)
-    else
-      Printf.printf "Invalid or incomplete signatures\n"
+    begin
+      match tx_signatures_valid blkh tm al (tau,tausg) with
+      | Some(provenl) -> (** go ahead and put it in the pool whether or not the props are proven; it can't confirm until they're proven **)
+         let txid = hashstx (tau,tausg) in
+         savetxtopool_real txid (tau,tausg)
+      | None ->
+         Printf.printf "Invalid or incomplete signatures\n"
+    end
   else
     Printf.printf "Invalid tx\n"
 
@@ -2496,12 +2499,12 @@ let validatetx4 blkh tm thtr sgtr ltr txbytes stau transform =
 	else
 	  None
       in
-      let validatetx_report() =
+      let validatetx_report provenl =
 	let stxh = hashstx stau in
 	begin
 	  try
 	    verbose_supportedcheck := None;
-	    let nfee = ctree_supports_tx (ref 0) true true false thtr sgtr blkh tau ltr in
+	    let nfee = ctree_supports_tx (ref 0) true true false thtr sgtr blkh provenl tau ltr in
 	    verbose_supportedcheck := None;
 	    retval()
 	  with
@@ -2515,14 +2518,14 @@ let validatetx4 blkh tm thtr sgtr ltr txbytes stau transform =
       in
       let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin ltr unsupportederror) in
       try
-	let (mbha,mbhb,mtm) = tx_signatures_valid_asof_blkh al (tau,tausg) in
+	let (mbha,mbhb,mtm,provenl) = tx_signatures_valid_asof_blkh al (tau,tausg) in
         let mbh = if blkh < Utils.lockingfixsoftforkheight then mbha else mbhb in
-        validatetx_report()
+        validatetx_report provenl
       with
       | BadOrMissingSignature ->
-	  validatetx_report()
+	  validatetx_report []
       | e ->
-	  validatetx_report()
+	  validatetx_report []
     end
   else
     None
@@ -2547,13 +2550,13 @@ let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
 	else
 	  None
       in
-      let validatetx_report() =
+      let validatetx_report provenl =
 	let stxh = hashstx stau in
 	Printf.fprintf oc "Tx is valid and has id %s\n" (hashval_hexstring stxh);
 	begin
 	  try
 	    verbose_supportedcheck := Some(oc);
-	    let nfee = ctree_supports_tx (ref 0) true true false thtr sgtr blkh tau ltr in
+	    let nfee = ctree_supports_tx (ref 0) true true false thtr sgtr blkh provenl tau ltr in
 	    verbose_supportedcheck := None;
 	    let minfee = Int64.mul (Int64.of_int txbytes) !Config.minrelayfee in
 	    let fee = Int64.sub 0L nfee in
@@ -2580,24 +2583,24 @@ let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
       in
       let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin ltr unsupportederror) in
       try
-	let (mbha,mbhb,mtm) = tx_signatures_valid_asof_blkh al (tau,tausg) in
+	let (mbha,mbhb,mtm,provenl) = tx_signatures_valid_asof_blkh al (tau,tausg) in
         let mbh = if blkh < Utils.lockingfixsoftforkheight then mbha else mbhb in
 	match (mbh,mtm) with
-	| (None,None) -> validatetx_report()
+	| (None,None) -> validatetx_report provenl
 	| (Some(bh2),None) ->
 	    if bh2 > blkh then
 	      begin
 		Printf.fprintf oc "Tx is not valid until block height %Ld\n" bh2;
 		flush oc
 	      end;
-	    validatetx_report()
+	    validatetx_report provenl
 	| (None,Some(tm2)) ->
 	    if tm2 > tm then
 	      begin
 		Printf.fprintf oc "Tx is not valid until time %Ld\n" tm2;
 		flush oc
 	      end;
-	    validatetx_report()
+	    validatetx_report provenl
 	| (Some(bh2),Some(tm2)) ->
 	    if (bh2 > blkh) && (tm2 > tm) then
 	      begin
@@ -2614,14 +2617,14 @@ let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
 		Printf.fprintf oc "Tx is not valid until time %Ld\n" tm2;
 		flush oc
 	      end;
-	    validatetx_report()
+	    validatetx_report provenl
       with
       | BadOrMissingSignature ->
 	  Printf.fprintf oc "Invalid or incomplete signatures\n";
-	  validatetx_report()
+	  validatetx_report []
       | e ->
 	  Printf.fprintf oc "Exception: %s\n" (Printexc.to_string e);
-	  validatetx_report()
+	  validatetx_report []
     end
   else
     (Printf.fprintf oc "Invalid tx\n"; None)
@@ -2667,14 +2670,14 @@ let sendtx2 oc blkh tm tr sr lr txbytes stau =
       let unsupportederror alpha h = Printf.fprintf oc "Could not find asset %s at address %s in ledger %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha) (hashval_hexstring lr) in
       let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin (CHash(lr)) unsupportederror) in
       try
-	let (mbha,mbhb,mtm) = tx_signatures_valid_asof_blkh al (tau,tausg) in
+	let (mbha,mbhb,mtm,provenl) = tx_signatures_valid_asof_blkh al (tau,tausg) in
         let mbh = if blkh < Utils.lockingfixsoftforkheight then mbha else mbhb in
 	let sendtxreal () =
 	  let stxh = hashstx stau in
 	  begin
 	    try
 	      let minfee = Int64.mul (Int64.of_int txbytes) !Config.minrelayfee in
-	      let nfee = ctree_supports_tx (ref 0) true true false (lookup_thytree tr) (lookup_sigtree sr) blkh tau (CHash(lr)) in
+	      let nfee = ctree_supports_tx (ref 0) true true false (lookup_thytree tr) (lookup_sigtree sr) blkh provenl tau (CHash(lr)) in
 	      let fee = Int64.sub 0L nfee in
 	      if fee >= minfee then
 		begin

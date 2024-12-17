@@ -125,7 +125,7 @@ let rec tx_outputs_valid_addr_cats outpl =
      alpha = hashval_pub_addr (hashopair2 th (hashsigna (signaspec_signa dl))) && tx_outputs_valid_addr_cats outpr
   | (alpha,(_,DocPublication(beta,h,th,dl)))::outpr ->
      (alpha = hashval_pub_addr (hashopair2 th (hashdoc dl)) && tx_outputs_valid_addr_cats outpr)
-  | (alpha,(_,Marker))::outpr -> pubaddr_p alpha && tx_outputs_valid_addr_cats outpr (*** markers should only be published to publication addresses, since they're used to prepublish an intention to publish ***)
+  | (alpha,(_,Marker))::outpr -> (pubaddr_p alpha || termaddr_p alpha) && tx_outputs_valid_addr_cats outpr (*** markers should only be published to publication addresses, since they're used to prepublish an intention to publish; but allow the output to be a term address as a way to indicate full_needed for a term address (for OP_PROVEN) ***)
   | _::outpr -> tx_outputs_valid_addr_cats outpr
   | [] -> true
 
@@ -230,15 +230,15 @@ let opmax b1 b2 =
 let check_spend_obligation_upto_blkh obday alpha (txhe:Z.t) s obl =
   match obl with
   | None -> (* defaults to alpha with no block height restriction *)
-      let (b,mbh,mtm) = verify_gensignat obday txhe s alpha in
+      let (b,mbh,mtm,provenl) = verify_gensignat obday txhe s alpha in
       if b then
-	(true,mbh,mbh,mtm)
+	(true,mbh,mbh,mtm,provenl)
       else
 	raise BadOrMissingSignature
   | Some(gamma,lkh,_) ->
-      let (b,mbh,mtm) = verify_gensignat obday txhe s (Hash.payaddr_addr gamma) in
+      let (b,mbh,mtm,provenl) = verify_gensignat obday txhe s (Hash.payaddr_addr gamma) in
       if b then
-	(b,mbh,opmax mbh (Some(lkh)),mtm)
+	(b,mbh,opmax mbh (Some(lkh)),mtm,provenl)
       else
 	raise BadOrMissingSignature
 
@@ -246,46 +246,54 @@ let check_spend_obligation_upto_blkh obday alpha (txhe:Z.t) s obl =
 let check_spend_obligation_upto_blkh2 obday alpha stxid (txhe:Z.t) s obl =
   match obl with
   | None -> (* defaults to alpha with no block height restriction *)
-      let (b,mbh,mtm) = verify_gensignat2 obday stxid txhe s alpha in
+      let (b,mbh,mtm,provenl) = verify_gensignat2 obday stxid txhe s alpha in
       if b then
-	(true,mbh,mbh,mtm)
+	(true,mbh,mbh,mtm,provenl)
       else
 	raise BadOrMissingSignature
   | Some(gamma,lkh,_) ->
-      let (b,mbh,mtm) = verify_gensignat2 obday stxid txhe s (Hash.payaddr_addr gamma) in
+      let (b,mbh,mtm,provenl) = verify_gensignat2 obday stxid txhe s (Hash.payaddr_addr gamma) in
       if b then
-	(b,mbh,opmax mbh (Some(lkh)),mtm)
+	(b,mbh,opmax mbh (Some(lkh)),mtm,provenl)
       else
 	raise BadOrMissingSignature
 
 (* Check whether a signature satisfies a spending obligation for a given block height and time. *)
 let check_spend_obligation obday alpha blkh tm (txhe:Z.t) s obl =
   try
-    let (b,mbh1,mbh2,mtm) = check_spend_obligation_upto_blkh obday alpha txhe s obl in
+    let (b,mbh1,mbh2,mtm,provenl) = check_spend_obligation_upto_blkh obday alpha txhe s obl in
     if b then
       if blkh < Utils.lockingfixsoftforkheight then (* lock was actually ignored before this height due to a bug *)
-        match (mbh1,mtm) with
-        | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
-        | (Some(bh2),None) -> bh2 <= blkh
-        | (None,Some(tm2)) -> tm2 <= tm
-        | (None,None) -> true
+        if (match (mbh1,mtm) with
+            | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
+            | (Some(bh2),None) -> bh2 <= blkh
+            | (None,Some(tm2)) -> tm2 <= tm
+            | (None,None) -> true)
+        then
+          Some(provenl)
+        else
+          None
       else
-        match (mbh2,mtm) with
-        | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
-        | (Some(bh2),None) -> bh2 <= blkh
-        | (None,Some(tm2)) -> tm2 <= tm
-        | (None,None) -> true
+        if (match (mbh2,mtm) with
+            | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
+            | (Some(bh2),None) -> bh2 <= blkh
+            | (None,Some(tm2)) -> tm2 <= tm
+            | (None,None) -> true)
+        then
+          Some(provenl)
+        else
+          None
     else
-      false
-  with BadOrMissingSignature -> false
+      None
+  with BadOrMissingSignature -> None
 
 (* Check whether a signature satisfies a move obligation. *)
 let check_move_obligation alpha txhe s obl2 u2 outpl =
   try
     if not (payaddr_p alpha) then raise Not_found; (* things held and termaddrs and pubaddrs should not be "moved" in this way *)
     ignore (List.find (fun z -> let (beta,(obl,u)) = z in obl = obl2 && u = u2) outpl);
-    let (b,mbh,mtm) = verify_gensignat None txhe s alpha in
-    b && mbh = None && mtm = None (* insist that moves do not depend on the time or block height (for simplicity) *)
+    let (b,mbh,mtm,provenl) = verify_gensignat None txhe s alpha in
+    b && mbh = None && mtm = None && provenl = [] (* insist that moves do not depend on the time or block height or proven props (for simplicity) *)
   with Not_found -> false
 
 (* Extract a signature from a list of signatures, given its index. *)
@@ -323,7 +331,7 @@ let rec check_tx_in_signatures txhe outpl inpl al sl rl propowns =
 		      let (s1,rl1) = getsig s rl in
 		      let (b,mbha,mbhb,mtm) = check_tx_in_signatures txhe outpl inpr ar sr rl1 propowns in
 		      if b then
-			let (b,mbh2a,mbh2b,mtm2) = check_spend_obligation_upto_blkh (Some(bday)) alpha txhe s1 (assetobl a) in
+			let (b,mbh2a,mbh2b,mtm2,provenl2) = check_spend_obligation_upto_blkh (Some(bday)) alpha txhe s1 (assetobl a) in
 			if b then
 			  (true,opmax mbha mbh2a,opmax mbhb mbh2b,opmax mtm mtm2)
 			else
@@ -347,7 +355,7 @@ let rec check_tx_in_signatures txhe outpl inpl al sl rl propowns =
 	    if b then
 	      begin
 		try
-		  let (b,mbh2a,mbh2b,mtm2) = check_spend_obligation_upto_blkh (Some(assetbday a)) alpha txhe s1 (assetobl a) in
+		  let (b,mbh2a,mbh2b,mtm2,provenl2) = check_spend_obligation_upto_blkh (Some(assetbday a)) alpha txhe s1 (assetobl a) in
 		  if b then
 		    (true,opmax mbha mbh2a,opmax mbhb mbh2b,opmax mtm mtm2)
 		  else
@@ -370,7 +378,7 @@ let rec check_tx_in_signatures txhe outpl inpl al sl rl propowns =
 (* Check whether a transaction's inputs are valid and have valid signatures, given the transaction's stxid, and compute the maximum block height and time specified in the signatures. *)
 let rec check_tx_in_signatures2 stxid txhe outpl inpl al sl rl propowns =
   match inpl,al,sl with
-  | [],[],[] -> (true,None,None,None)
+  | [],[],[] -> (true,None,None,None,[])
   | (alpha,k)::inpr,(a::ar),sl when marker_or_bounty_p a -> (*** don't require signatures to spend markers and bounties; but there are conditions for the tx to be supported by a ctree ***)
       if assetid a = k then
 	begin
@@ -381,15 +389,15 @@ let rec check_tx_in_signatures2 stxid txhe outpl inpl al sl rl propowns =
 		  match sl with
 		  | s::sr ->
 		      let (s1,rl1) = getsig s rl in
-		      let (b,mbha,mbhb,mtm) = check_tx_in_signatures2 stxid txhe outpl inpr ar sr rl1 propowns in
+		      let (b,mbha,mbhb,mtm,provenl) = check_tx_in_signatures2 stxid txhe outpl inpr ar sr rl1 propowns in
 		      if b then
-			let (b,mbh2a,mbh2b,mtm2) = check_spend_obligation_upto_blkh2 (Some(bday)) alpha stxid txhe s1 (assetobl a) in
+			let (b,mbh2a,mbh2b,mtm2,provenl2) = check_spend_obligation_upto_blkh2 (Some(bday)) alpha stxid txhe s1 (assetobl a) in
 			if b then
-			  (true,opmax mbha mbh2a,opmax mbhb mbh2b,opmax mtm mtm2)
+			  (true,opmax mbha mbh2a,opmax mbhb mbh2b,opmax mtm mtm2,provenl @ provenl2)
 			else
-			  (false,None,None,None)
+			  (false,None,None,None,[])
 		      else
-			(false,None,None,None)
+			(false,None,None,None,[])
 		  | [] -> raise Not_found
 		with Not_found -> raise BadOrMissingSignature
 	      end		      
@@ -403,18 +411,18 @@ let rec check_tx_in_signatures2 stxid txhe outpl inpl al sl rl propowns =
 	try
 	  let (s1,rl1) = getsig s rl in
 	  if assetid a = k then
-	    let (b,mbha,mbhb,mtm) = check_tx_in_signatures2 stxid txhe outpl inpr ar sr rl1 propowns in
+	    let (b,mbha,mbhb,mtm,provenl) = check_tx_in_signatures2 stxid txhe outpl inpr ar sr rl1 propowns in
 	    if b then
 	      begin
 		try
-		  let (b,mbh2a,mbh2b,mtm2) = check_spend_obligation_upto_blkh2 (Some(assetbday a)) alpha stxid txhe s1 (assetobl a) in
+		  let (b,mbh2a,mbh2b,mtm2,provenl2) = check_spend_obligation_upto_blkh2 (Some(assetbday a)) alpha stxid txhe s1 (assetobl a) in
 		  if b then
-		    (true,opmax mbha mbh2a,opmax mbhb mbh2b,opmax mtm mtm2)
+		    (true,opmax mbha mbh2a,opmax mbhb mbh2b,opmax mtm mtm2,provenl @ provenl2)
 		  else
-		    (false,None,None,None)
+		    (false,None,None,None,[])
 		with BadOrMissingSignature ->
 		  if check_move_obligation alpha txhe s1 (assetobl a) (assetpre a) outpl then
-		    (true,mbha,mbhb,mtm)
+		    (true,mbha,mbhb,mtm,provenl)
 		  else
 		    raise BadOrMissingSignature
 	      end
@@ -438,7 +446,7 @@ let rec check_tx_out_signatures txhe outpl sl rl =
 	try
 	  let (s1,rl1) = getsig s rl in
 	  if check_tx_out_signatures txhe outpr sr rl1 then
-	    let (b,mbh,mtm) = verify_gensignat None txhe s1 (payaddr_addr alpha) in
+	    let (b,mbh,mtm,provenl) = verify_gensignat None txhe s1 (payaddr_addr alpha) in
 	    if b && mbh = None && mtm = None then (*** output signatures should never depend on the time or block height ***)
 	      true
 	    else
@@ -453,7 +461,7 @@ let rec check_tx_out_signatures txhe outpl sl rl =
 	try
 	  let (s1,rl1) = getsig s rl in
 	  if check_tx_out_signatures txhe outpr sr rl1 then
-	    let (b,mbh,mtm) = verify_gensignat None txhe s1 (payaddr_addr alpha) in
+	    let (b,mbh,mtm,provenl) = verify_gensignat None txhe s1 (payaddr_addr alpha) in
 	    if b && mbh = None && mtm = None then (*** output signatures should never depend on the time or block height ***)
 	      true
 	    else
@@ -468,7 +476,7 @@ let rec check_tx_out_signatures txhe outpl sl rl =
 	try
 	  let (s1,rl1) = getsig s rl in
 	  if check_tx_out_signatures txhe outpr sr rl1 then
-	    let (b,mbh,mtm) = verify_gensignat None txhe s1 (payaddr_addr alpha) in
+	    let (b,mbh,mtm,provenl) = verify_gensignat None txhe s1 (payaddr_addr alpha) in
 	    if b && mbh = None && mtm = None then (*** output signatures should never depend on the time or block height ***)
 	      true
 	    else
@@ -549,10 +557,10 @@ let tx_signatures_valid_asof_blkh al stau =
     | [],[] -> []
     | _,_ -> raise BadOrMissingSignature (*** actually this means the asset list does not match the inputs ***)
   in
-  let (b,mbha,mbhb,mtm) = check_tx_in_signatures2 stxh txhe (tx_outputs tau) (tx_inputs tau) al sli [] (get_propowns (tx_inputs tau) al) in
+  let (b,mbha,mbhb,mtm,provenl) = check_tx_in_signatures2 stxh txhe (tx_outputs tau) (tx_inputs tau) al sli [] (get_propowns (tx_inputs tau) al) in
   if b then
     if check_tx_out_signatures txhe (tx_outputs tau) slo [] then
-      (mbha,mbhb,mtm)
+      (mbha,mbhb,mtm,provenl)
     else
       raise BadOrMissingSignature
   else
@@ -581,20 +589,28 @@ let estimate_required_signatures al (tauin,tauout) =
 (* Check whether a signed transaction's signatures are valid for a given block height and time. *)
 let tx_signatures_valid blkh tm al stau =
   try
-    let (mbha,mbhb,mtm) = tx_signatures_valid_asof_blkh al stau in
+    let (mbha,mbhb,mtm,provenl) = tx_signatures_valid_asof_blkh al stau in
     if blkh < Utils.lockingfixsoftforkheight then
-      match (mbha,mtm) with
-      | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
-      | (Some(bh2),None) -> bh2 <= blkh
-      | (None,Some(tm2)) -> tm2 <= tm
-      | (None,None) -> true
+      if (match (mbha,mtm) with
+          | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
+          | (Some(bh2),None) -> bh2 <= blkh
+          | (None,Some(tm2)) -> tm2 <= tm
+          | (None,None) -> true)
+      then
+        Some([])
+      else
+        None
     else
-      match (mbhb,mtm) with
-      | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
-      | (Some(bh2),None) -> bh2 <= blkh
-      | (None,Some(tm2)) -> tm2 <= tm
-      | (None,None) -> true
-  with BadOrMissingSignature -> false
+      if (match (mbhb,mtm) with
+          | (Some(bh2),Some(tm2)) -> bh2 <= blkh && tm2 <= tm
+          | (Some(bh2),None) -> bh2 <= blkh
+          | (None,Some(tm2)) -> tm2 <= tm
+          | (None,None) -> true)
+      then
+        Some(provenl)
+      else
+        None
+  with BadOrMissingSignature -> None
 
 (* Update an obligation tree with the theories published in a transaction's outputs. *)
 let rec txout_update_ottree outpl tht =

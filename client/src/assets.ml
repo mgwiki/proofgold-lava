@@ -164,6 +164,7 @@ the current block height. *)
 let rec add_vout bday txh outpl i =
   match outpl with
   | [] -> []
+  | (alpha,(obl,Marker))::outpr when termaddr_p alpha -> add_vout bday txh outpr i
   | (alpha,(obl,u))::outpr -> (alpha,(hashpair txh (hashint32 i),bday,obl,u))::add_vout bday txh outpr (Int32.add i 1l)
 
 (* The preasset_value function calculates the value of a preasset, taking into

@@ -1946,9 +1946,11 @@ Hashtbl.add msgtype_handler STx
 		       if tx_valid tau then
 			 let unsupportederror alpha k = log_string (Printf.sprintf "Could not find asset %s at address %s in ledger %s; throwing out tx %s\n" (hashval_hexstring k) (Cryptocurr.addr_pfgaddrstr alpha) (hashval_hexstring lr) (hashval_hexstring h)) in
 			 let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin (CHash(lr)) unsupportederror) in
-			 if tx_signatures_valid nblkh tmstmp al stau then (*** accept it if it will be valid in the next block ***)
+                         begin
+                           match tx_signatures_valid nblkh tmstmp al stau with (*** accept it if it will be valid in the next block ***)
+                           | Some(provenl) ->
 			   begin
-			     let nfee = ctree_supports_tx (ref 0) true true false (lookup_thytree tr) (lookup_sigtree sr) nblkh tau (CHash(lr)) in
+			     let nfee = ctree_supports_tx (ref 0) true true false (lookup_thytree tr) (lookup_sigtree sr) nblkh provenl tau (CHash(lr)) in
 			     let fee = Int64.sub 0L nfee in
 			     if fee >= minfee then
 			       begin
@@ -1963,8 +1965,9 @@ Hashtbl.add msgtype_handler STx
 			     else
 			       (log_string (Printf.sprintf "ignoring tx %s with low fee of %s bars (%Ld atoms)\n" (hashval_hexstring h) (Cryptocurr.bars_of_atoms fee) fee))
 			   end
-			 else
-			   (log_string (Printf.sprintf "ignoring tx %s since signatures are not valid at the next block height of %Ld\n" (hashval_hexstring h) nblkh))
+			   | None ->
+			      (log_string (Printf.sprintf "ignoring tx %s since signatures are not valid at the next block height of %Ld\n" (hashval_hexstring h) nblkh))
+                         end
 		       else
 			 (log_string (Printf.sprintf "misbehaving peer? [invalid Tx %s]\n" (hashval_hexstring h)))
 		     end
