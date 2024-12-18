@@ -1329,7 +1329,12 @@ let rec get_bestblock () =
   match !bestblocklist with
   | (_,h,_)::_ -> (Some(h,big_int_be256 Z.zero,big_int_be256 Z.zero),[])
   | _ -> raise (Failure "no blocks?")
-                     
+
+let rec get_bestblock2 () =
+  match !bestblocklist with
+  | (blkh,h,_)::_ -> (blkh,h)
+  | _ -> raise (Failure "no blocks?")
+
 let ensure_sync () =
   let (_,ctips0l) = ltcpfgstatus_dbget !ltc_bestblock in
   List.iter

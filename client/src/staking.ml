@@ -1867,3 +1867,28 @@ let stakingthread () =
 	sleepuntil := ltc_medtime()
   done;;
 
+(** PoW version, so really mining, not staking **)
+let stakingthread () =
+  log_string (Printf.sprintf "mining thread begin %f\n" (Unix.gettimeofday()));
+  let pending = ref None in
+  while true do
+    try
+      raise (StakingPauseMsg(3600.0,"mining unwritten"))
+    with
+    | StakingPauseMsg(del,msg) ->
+	log_string (Printf.sprintf "Staking pause of %f seconds: %s\n" del msg);
+	Thread.delay del
+    | StakingPause(del) ->
+	log_string (Printf.sprintf "Staking pause of %f seconds\n" del);
+	Thread.delay del
+    | StakingPublishBlockPause -> (** delay to allow peers to request the new block **)
+	log_string (Printf.sprintf "Staking pause while peers request new block.\n");
+	Thread.delay 60.0
+    | StakingProblemPause -> (** something abnormal happened, pause staking for 10 minutes **)
+	log_string (Printf.sprintf "Pausing staking for 10 minutes.");
+	Thread.delay 600.0
+    | e ->
+	log_string (Printf.sprintf "Staking exception: %s\nPausing staking for 10 minutes.\n" (Printexc.to_string e));
+	Thread.delay 600.0
+  done;;
+      

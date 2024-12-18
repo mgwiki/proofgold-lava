@@ -3177,16 +3177,11 @@ let query q =
   | Some(ledgerroot) ->
       query_at_block q None ledgerroot (-1L)
   | None ->
-      try
-	let (b,cwl) = get_bestblock() in
-	match b with
-	| Some(_,lbk,ltx) ->
-	    let (bh,lmedtm,burned,(txid1,vout1),_,_,blkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
-	    let pbh = Some(bh,Poburn(lbk,ltx,lmedtm,burned,txid1,vout1)) in
-	    let (_,_,ledgerroot,_,_) = Db_validheadervals.dbget (hashpair lbk ltx) in
-	    query_at_block q pbh ledgerroot blkh
-	| None -> JsonObj([("response",JsonStr("no best block found"))])
-      with Not_found -> JsonObj([("response",JsonStr("no best block found"))])
+     try
+	let (blkh,bh) = get_bestblock2() in
+        let (bhd,_) = DbBlockHeader.dbget bh in
+        query_at_block q bhd.prevblockhash bhd.newledgerroot blkh
+     with Not_found -> JsonObj([("response",JsonStr("no best block found"))])
 
 let query_blockheight findblkh =
   if findblkh < 1L then
