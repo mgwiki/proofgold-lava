@@ -119,3 +119,5 @@ val hashval_from_json : jsonval -> hashval
 val bountyfund : p2pkhaddr
 
 val addr_get_bit : addr -> int -> bool
+
+val pow_finalstep : hashval -> Z.t

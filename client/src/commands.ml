@@ -3508,6 +3508,7 @@ let rec pblockchain_r s lbk ltx m =
 	try
 	  let (tar,tm,lr,_,_) = Db_validheadervals.dbget (hashpair lbk ltx) in
 	  Printf.fprintf s "block %Ld %s (post block ledger %s)\n" blkh (hashval_hexstring dbh) (hashval_hexstring lr);
+          Printf.fprintf s "(BLOCK %Ld \"%s\" %s)\n" blkh (hashval_hexstring dbh) (Z.to_string (pow_finalstep dbh));
 	  Printf.fprintf s "Timestamp: %Ld\n" tm;
 	  Printf.fprintf s "Target: %s\n" (string_of_big_int tar);
 	  Printf.fprintf s "Difficulty: %s\n" (string_of_big_int (difficulty tar));

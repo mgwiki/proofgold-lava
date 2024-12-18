@@ -693,3 +693,15 @@ let addr_get_bit (p,xs) i =
   | 0 -> p lsr 1 = 1
   | 1 -> p land 1 = 1
   | _ -> Be160.get_bit xs (i-2)
+
+(* End call of a PoW function sha256 -> xor[data1] -> sha256 -> xor[data2] -> sha256 *)
+(* data1 and data2 are some edges from a (5,5,42) graph *)
+let pow_finalstep h =
+  let h1 = be256_big_int (Hashbtc.sha256 (Be256.to_string h)) in
+  let data1 = Z.of_string "85203879851976772409197015147435459456209634815333654718846144741715134410787" in
+  let h2 = Z.logxor h1 data1 in
+  let h3 = be256_big_int (Hashbtc.sha256 (Be256.to_string (big_int_be256 h2))) in
+  let data2 = Z.of_string "111208318822715432841965516495767018792223962729215107472352236300166812494771" in
+  let h4 = Z.logxor h1 data2 in
+  be256_big_int (Hashbtc.sha256 (Be256.to_string (big_int_be256 h4)))
+

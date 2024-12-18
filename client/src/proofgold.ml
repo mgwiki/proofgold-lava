@@ -4626,6 +4626,28 @@ let initialize_commands () =
 	    with Not_found -> raise (Failure("problem"))
 	  end
       | _ -> raise BadCommandForm);
+  ac "getbestblockhash" "getbestblockhash" "Get the current tip of the pfg blockchain"
+    (fun oc al ->
+      if al = [] then
+        begin
+          match !bestblocklist with
+          | (_,h,_)::_ ->
+             Printf.fprintf oc "%s\n" (hashval_hexstring h)
+          | [] -> raise (Failure "no blocks?")
+        end
+      else
+        raise BadCommandForm);
+  ac "getbestblock" "getbestblock" "Get the current tip of the pfg blockchain"
+    (fun oc al ->
+      if al = [] then
+        begin
+          match !bestblocklist with
+          | (blkh,h,cumulpow)::_ ->
+             Printf.fprintf oc "%Ld %s %s\n" blkh (hashval_hexstring h) (Z.to_string cumulpow)
+          | [] -> raise (Failure "no blocks?")
+        end
+      else
+        raise BadCommandForm);
   ac "ltcgetbestblockhash" "ltcgetbestblockhash" "Get the current tip of the ltc blockchain."
     (fun oc al ->
       if al = [] then
@@ -6377,6 +6399,31 @@ let initialize_commands () =
         with Not_found ->
           Printf.fprintf oc "Do not have private key for stake address in wallet.\n"
       end);
+  ac "powtest1" "powtest1" "powtest1"
+    (fun oc _ ->
+      let h = hexstring_hashval "5d0348c04a54e30e367c8853ee947f3513537890701763e7c8dd146b2588ba10" in
+      let (bhd,bhs) = DbBlockHeader.dbget h in
+      let bhsh = hash_blockheadersig bhs in
+      let stm = Unix.gettimeofday() in
+      for i = 1 to 100000 do
+        let bhdi =
+          { prevblockhash = bhd.prevblockhash;
+            pureburn = Some(h,Int32.of_int i);
+            newtheoryroot = bhd.newtheoryroot;
+            newsignaroot = bhd.newsignaroot;
+            newledgerroot = bhd.newledgerroot;
+            stakeaddr = bhd.stakeaddr;
+            stakeassetid = bhd.stakeassetid;
+            timestamp = bhd.timestamp;
+            deltatime = bhd.deltatime;
+            tinfo = bhd.tinfo;
+            prevledger = bhd.prevledger;
+            blockdeltaroot = bhd.blockdeltaroot;
+          }
+        in
+        ignore (pow_finalstep (hashpair (hash_blockheaderdata bhdi) bhsh))
+      done;
+      Printf.fprintf oc "Time: %f\n" (Unix.gettimeofday() -. stm));
   ac "blockchain" "blockchain [<n>]" "Print the blockchain up to the most recent <n> blocks, with a default of 1000 blocks."
     (fun oc al ->
       match al with
@@ -7101,6 +7148,33 @@ let initialize () =
     Db_blockburns.dbinit();
     openlog(); (*** Don't open the log until the config vars are set, so if we know whether or not it's testnet. ***)
     init_ledger();
+    begin (** go through blocks to determine history up to Dec 2024 (PoS) and after (PoW) **)
+      let historicblock : (hashval,unit) Hashtbl.t = Hashtbl.create 40000 in
+      let rec mark_historic h =
+        Hashtbl.add historicblock h ();
+        let (bhd,_) = DbBlockHeader.dbget h in
+        match bhd.prevblockhash with
+        | None -> ()
+        | Some(k,_) -> mark_historic k
+      in
+      let last_historic_block = hexstring_hashval "5d0348c04a54e30e367c8853ee947f3513537890701763e7c8dd146b2588ba10" in
+      mark_historic last_historic_block;
+      bestblocklist := [(39253L,last_historic_block,Z.zero)];
+      DbBlockHeader.dbkeyiter
+        (fun h ->
+          if not (Hashtbl.mem historicblock h) then
+            begin
+              try
+                let (bhd,bhs) = DbBlockHeader.dbget h in
+                let bd = DbBlockDelta.dbget h in
+                match bhd.prevblockhash with
+                | None -> ()
+                | Some(_,Poburn(cumulpow,_,blkh,_,_,_)) ->
+                   bestblocklist :=
+                     List.merge (fun (_,_,cumulpow1) (_,_,cumulpow2) -> Z.compare cumulpow1 cumulpow2) [(blkh,h,be256_big_int cumulpow)] !bestblocklist
+              with Not_found -> ()
+            end);
+    end;
     if not !Config.daemon then (Printf.printf "Initialized.\n"; flush stdout);
     let sout = if !Config.daemon then !Utils.log else stdout in
     begin

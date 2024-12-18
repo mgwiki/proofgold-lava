@@ -1323,68 +1323,12 @@ let get_burn dbh =
 	end)
     bbl
 
+let bestblocklist : (int64 * hashval * Z.t) list ref = ref []
+
 let rec get_bestblock () =
-  match !artificialbestblock with
-  | Some(h,lbk,ltx) -> (Some(h,lbk,ltx),[])
-  | None ->
-     let (lastchangekey,ctips0l) = ltcpfgstatus_dbget !ltc_bestblock in
-     let tm = ltc_medtime() in
-     if ctips0l = [] && tm > Int64.add !Config.genesistimestamp 604800L then
-       begin
-	 Printf.printf "No blocks were created in the past week. Proofgold has reached terminal status.\nSometimes this message means the node is out of sync with ltc.\n"
-       end;
-     let rec get_bestblock_r2 p ctipsorig ctips ctipsr cwl =
-       match ctips with
-       | [] ->
-          if p = 1 then
-            get_bestblock_r2 2 ctipsorig ctipsorig ctipsr cwl
-          else
-            get_bestblock_r ctipsr cwl
-       | (dbh,lbh,ltxh,ltm,lhght)::ctipr ->
-	  begin
-	    if DbInvalidatedBlocks.dbexists dbh then
-	      get_bestblock_r2 p ctipsorig ctipr ctipsr (ConsensusWarningInvalid(dbh)::cwl)
-	    else if DbBlacklist.dbexists dbh then
-	      get_bestblock_r2 p ctipsorig ctipr ctipsr (ConsensusWarningBlacklist(dbh)::cwl)
-	    else
-	      begin
-		try
-		  let (lbk,ltx) = get_burn dbh in
-                  if p = 1 then
-                    if Hashtbl.mem localpreferred dbh then
-		      (Some(dbh,lbk,ltx),cwl)
-                    else
-		      get_bestblock_r2 p ctipsorig ctipr ctipsr cwl
-                  else
-		    if Db_validblockvals.dbexists (hashpair lbk ltx) then
-		      (Some(dbh,lbk,ltx),cwl)
-		    else
-		      get_bestblock_r2 p ctipsorig ctipr ctipsr (ConsensusWarningMissing(dbh,lbk,ltx)::cwl)
-		with Not_found ->
-		  get_bestblock_r2 p ctipsorig ctipr ctipsr (ConsensusWarningNoBurn(dbh)::cwl)
-	      end
-	  end
-     and get_bestblock_r ctipsl cwl =
-       match ctipsl with
-       | [] ->
-	  let tm = ltc_medtime() in
-	  if tm > Int64.add !Config.genesistimestamp 604800L then
-	    begin
-	      raise (Failure "cannot find best validated header; probably out of sync")
-	    end
-	  else
-	    (None,cwl)
-       | (_,ctips)::ctipsr ->
-	  get_bestblock_r2 1 ctips ctips ctipsr cwl
-     in
-     let cwl =
-       let tm = ltc_medtime() in
-       if ctips0l = [] && tm > Int64.add !Config.genesistimestamp 604800L then
-	 [ConsensusWarningTerminal]
-       else
-	 []
-     in
-     get_bestblock_r ctips0l cwl
+  match !bestblocklist with
+  | (_,h,_)::_ -> (Some(h,big_int_be256 Z.zero,big_int_be256 Z.zero),[])
+  | _ -> raise (Failure "no blocks?")
                      
 let ensure_sync () =
   let (_,ctips0l) = ltcpfgstatus_dbget !ltc_bestblock in
