@@ -804,7 +804,7 @@ let findpfgtx txs1 txs2 =
   let txs = ref "" in
   let pfgid ri =
     let (_,_,_,_,_,_,_,x) = ri in
-    Int32.logand x 0x1ffffl = 0x16650l
+    Int32.logand x 0x80ffffl = 0x6650l
   in
   while not (pfgid !rtxid) do
     incr i;
