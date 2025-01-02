@@ -22,7 +22,7 @@ val pop_bytes : int list -> int list * int list
 val blnum_le : Z.t -> int -> int list
 val blnum_be : Z.t -> int -> int list
 
-val verify_p2sh : int64 option -> Z.t -> p2shaddr -> int list -> bool * int64 option * int64 option
+val verify_p2sh : int64 option -> Z.t -> p2shaddr -> int list -> bool * int64 option * int64 option * hashval list
 
 type gensignat =
   | P2pkhSignat of pt * bool * signat
@@ -32,9 +32,9 @@ type gensignat =
   | EndP2shToP2pkhSignat of pt * bool * int list * signat
   | EndP2shToP2shSignat of Be160.t * int list * int list
 
-val verify_gensignat : int64 option -> Z.t -> gensignat -> addr -> bool * int64 option * int64 option
+val verify_gensignat : int64 option -> Z.t -> gensignat -> addr -> bool * int64 option * int64 option * hashval list
 
-val verify_gensignat2 : int64 option -> hashval -> Z.t -> gensignat -> addr -> bool * int64 option * int64 option
+val verify_gensignat2 : int64 option -> hashval -> Z.t -> gensignat -> addr -> bool * int64 option * int64 option * hashval list
 
 val seo_gensignat : (int -> int -> 'a -> 'a) -> gensignat -> 'a -> 'a
 val sei_gensignat : (int -> 'a -> int * 'a) -> 'a -> gensignat * 'a

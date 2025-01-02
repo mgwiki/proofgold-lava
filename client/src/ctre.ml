@@ -1342,7 +1342,8 @@ let add_vout bh txh outpl =
   let r = ref [] in
   List.iter
     (fun (alpha,(obl,u)) ->
-      r := ((0,alpha),(hashpair txh (hashint32 (Int32.of_int !i)),bh,obl,u))::!r;
+      if not (termaddr_p alpha && u = Marker) then (** hack to support OP_PROVEN; just drop these outputs in the transformation of the ctree so we don't actually put Markers into term addresses **)
+        r := ((0,alpha),(hashpair txh (hashint32 (Int32.of_int !i)),bh,obl,u))::!r;
       incr i;
     )
     outpl;
@@ -1837,7 +1838,7 @@ let rec ctree_supports_output_addrs exp req outpl tr =
 
 (*** return the fee (negative) or reward (positive) if supports tx, otherwise raise NotSupported ***)
 (*** this does not request remote data and does not allow local expansions of hash abbrevs ***)
-let ctree_supports_tx_2 counter strct exp req tht sigt blkh tx aal al tr =
+let ctree_supports_tx_2 counter strct exp req tht sigt blkh provenl tx aal al tr =
   let (inpl,outpl) = tx in
   (*** Each output address must be supported. ***)
   ctree_supports_output_addrs exp req outpl tr;
@@ -2361,15 +2362,24 @@ let ctree_supports_tx_2 counter strct exp req tht sigt blkh tx aal al tr =
       | _ -> ()
     )
     aal;
-***)
+ ***)
+  (*** Check that every propid on provenl has been proven (has an OwnedProp at the address) ***)
+  List.iter
+    (fun pid ->
+      let alpha = hashval_term_addr pid in
+      let hl = ctree_lookup_addr_assets exp req tr (0,alpha) in
+      match hlist_lookup_prop_owner strct exp req pid hl with (*** A proposition has been proven in a theory iff it has an owner. ***)
+      | Some(beta,r) -> ()
+      | None -> raise NotSupported)
+    provenl;
   (*** finally, return the number of currency units created or destroyed ***)
   Int64.sub (out_cost outpl) (asset_value_sum blkh al)
 
-let ctree_supports_tx counter strct exp req tht sigt blkh tx tr =
+let ctree_supports_tx counter strct exp req tht sigt blkh provenl tx tr =
   let (inpl,outpl) = tx in
   let aal = ctree_lookup_input_assets strct exp req inpl tr (fun _ _ -> ()) in
   let al = List.map (fun (_,a) -> a) aal in
-  let r = ctree_supports_tx_2 counter strct exp req tht sigt blkh tx aal al tr in
+  let r = ctree_supports_tx_2 counter strct exp req tht sigt blkh provenl tx aal al tr in
   r
 
 let rec hlist_lub hl1 hl2 =
@@ -2701,6 +2711,7 @@ let octree_reduce_to_min_support inpl outpl full oc =
 let rec full_needed_1 outpl =
   match outpl with
   | [] -> []
+  | (alpha,(_,Marker))::outpr when termaddr_p alpha -> (0,alpha)::full_needed_1 outpr (* hack to support OP_PROVEN *)
   | (_,(o,(RightsObj(h,_))))::outpr -> (0,(termaddr_addr (hashval_be160 h)))::full_needed_1 outpr
   | (_,(o,(RightsProp(h,_))))::outpr -> (0,(termaddr_addr (hashval_be160 h)))::full_needed_1 outpr
   | (alpha,(o,(OwnsObj(_,_,_))))::outpr -> (0,alpha)::full_needed_1 outpr

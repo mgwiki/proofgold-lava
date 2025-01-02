@@ -848,12 +848,12 @@ let valid_block_a tht sigt blkh csm tinfo b ((aid,bday,obl,u) as a) p2pkhstkaddr
   then
     let tr = ctree_of_block b in (*** let tr be the ctree of the block, used often below ***)
     let counter = ref 0 in
-    if ((try let z = ctree_supports_tx counter false false false tht sigt blkh (coinstake b) tr in (*** the ctree must support the tx without the need to expand hashes using the database or requesting from peers ***)
+    if ((try let z = ctree_supports_tx counter false false false tht sigt blkh [] (coinstake b) tr in (*** the ctree must support the tx without the need to expand hashes using the database or requesting from peers; Note: the coinstake won't have any props that should have been proven since it has only one input and that input is a p2pkh address. So we give ctree_supports_tx the empty list of propids here. ***)
              vbc (fun c -> Printf.fprintf c "Comparing z %Ld to %Ld.\n" z reward);
-    z >= reward
-    with NotSupported -> false)
-	  &&
-	(*** There are no duplicate transactions. (Comparing the signatures would be an error since they contain abstract values.) ***)
+             z >= reward
+         with NotSupported -> false)
+        &&
+          (*** There are no duplicate transactions. (Comparing the signatures would be an error since they contain abstract values.) ***)
 	no_dups (List.map (fun (tau,_) -> tau) bd.blockdelta_stxl)
 	  &&
 	(*** The cgraft is valid. ***)
@@ -886,13 +886,15 @@ let valid_block_a tht sigt blkh csm tinfo b ((aid,bday,obl,u) as a) p2pkhstkaddr
 		    in
 		    let aal = ctree_lookup_input_assets false false false inpl tr (fun _ _ -> ()) in
 		    let al = List.map (fun (_,a) -> a) aal in
-		    norew
-		      && sgvb
-		      && not (List.mem stakein inpl)
-		      && tx_signatures_valid blkh bhd.timestamp al stau
-		      && tx_valid tau
-		      && ctree_supports_tx_2 counter false false false tht sigt blkh tau aal al tr <= 0L
-	      )
+                    if norew && sgvb && not (List.mem stakein inpl) then
+                      begin
+                        match tx_signatures_valid blkh bhd.timestamp al stau with
+                        | Some(prvnl) ->
+                           tx_valid tau && ctree_supports_tx_2 counter false false false tht sigt blkh prvnl tau aal al tr <= 0L
+                        | None -> false
+                      end
+                    else
+                      false)
 	      true
 	      bd.blockdelta_stxl
 	  with NotSupported -> false

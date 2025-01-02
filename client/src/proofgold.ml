@@ -5456,19 +5456,19 @@ let initialize_commands () =
 	  Printf.fprintf oc "\nFund asset id 1: %s\n" (hashval_hexstring fundid1);
 	  Printf.fprintf oc "Fund asset id 2: %s\n" (hashval_hexstring fundid2)
 	end);
-  ac "createhtlc" "createhtlc <p2pkhaddr:alpha> <p2pkhaddr:beta> <timelock> [relative] [<secret>] [json]"
-    "Create hash timelock constract script and address.\nThe controller of address alpha can spend with the secret.\nThe controller of the address beta can spend after the timelock.\nThe controller of address alpha should call this command and the secret will be held in alpha's wallet.\nA hex 32 byte secret can optionally be given, otherwise one will be randomly generated.\nIf 'relative' is given, then relative lock time (CSV) is used. Otherwise absolute lock time (CLTV) is used.\nThe timelock is either in block time (if less than 500000000) or unix time (otherwise).\nOnly block time can be used with relative block time."
+  ac "createhtlc" "createhtlc <p2pkhaddr:alpha> <p2pkhaddr:beta> <timelock> [<secret>] [absolute] [json]"
+    "Create hash timelock contract script and address.\nThe controller of address alpha can spend with the secret.\nThe controller of the address beta can spend after the timelock.\nThe controller of address alpha should call this command and the secret will be held in alpha's wallet.\nA hex 32 byte secret can optionally be given, otherwise one will be randomly generated.\nIf 'absolute' is given, then absolute lock time (CLTV) is used. Otherwise relative lock time (CSV) is used.\nThe timelock is either in block time (if less than 500000000) or unix time (otherwise).\nOnly block time can be used with relative block time."
     (fun oc al ->
       let (alphas,alpha,betas,beta,tmlock,rel,secr,jb) =
 	match al with
-	  [alpha;beta;tmlock] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,big_int_hashval (strong_rand_256()),false)
-	| [alpha;beta;tmlock;"relative"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,big_int_hashval (strong_rand_256()),false)
-	| [alpha;beta;tmlock;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,big_int_hashval (strong_rand_256()),false)
+	  [alpha;beta;tmlock] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,big_int_hashval (strong_rand_256()),false)
+	| [alpha;beta;tmlock;"absolute"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,big_int_hashval (strong_rand_256()),false)
+	| [alpha;beta;tmlock;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,big_int_hashval (strong_rand_256()),false)
 	| [alpha;beta;tmlock;secr] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,hexstring_hashval secr,false)
-	| [alpha;beta;tmlock;"relative";"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,big_int_hashval (strong_rand_256()),true)
-	| [alpha;beta;tmlock;"relative";secr] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,hexstring_hashval secr,false)
-	| [alpha;beta;tmlock;secr;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,hexstring_hashval secr,true)
-	| [alpha;beta;tmlock;"relative";secr;"true"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,hexstring_hashval secr,true)
+	| [alpha;beta;tmlock;"absolute";"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,big_int_hashval (strong_rand_256()),true)
+	| [alpha;beta;tmlock;secr;"absolute"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,hexstring_hashval secr,false)
+	| [alpha;beta;tmlock;secr;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,hexstring_hashval secr,true)
+	| [alpha;beta;tmlock;secr;"absolute";"true"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,hexstring_hashval secr,true)
 	| _ -> raise BadCommandForm
       in
       if not (p2pkhaddr_p alpha) then raise (Failure (Printf.sprintf "%s is not a p2pkh address" alphas));
@@ -5498,15 +5498,51 @@ let initialize_commands () =
 	  Printf.fprintf oc "Secret: %s\n" (hashval_hexstring secr);
 	  Printf.fprintf oc "Hash of secret: %s\n" (hashval_hexstring secrh)
 	end);
-  ac "verifycommitmenttx" "verifycommitmenttx alpha beta fundaddress fundid1 fundid2 alphaamt betaamt secrethash tx [json]"
+  ac "createptlc" "createptlc <p2pkhaddr:alpha> <p2pkhaddr:beta> <propid> <timelock> [absolute] [json]"
+    "Create prop timelock contract script and address.\nThe controller of address alpha can spend if the proposition has been proven.\nThe controller of the address beta can spend after the timelock.\nIf 'absolute' is given, then absolute lock time (CLTV) is used. Otherwise relative lock time (CSV) is used.\nThe timelock is either in block time (if less than 500000000) or unix time (otherwise).\nOnly block time can be used with relative block time."
+    (fun oc al ->
+      let (alphas,alpha,betas,beta,tmlock,pid,rel,jb) =
+	match al with
+	  [alpha;beta;pid;tmlock] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,hexstring_hashval pid,true,false)
+	| [alpha;beta;pid;tmlock;"absolute"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,hexstring_hashval pid,false,false)
+	| [alpha;beta;pid;tmlock;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,hexstring_hashval pid,true,true)
+	| [alpha;beta;pid;tmlock;"absolute";"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,hexstring_hashval pid,false,true)
+	| _ -> raise BadCommandForm
+      in
+      if not (p2pkhaddr_p alpha) then raise (Failure (Printf.sprintf "%s is not a p2pkh address" alphas));
+      if not (p2pkhaddr_p beta) then raise (Failure (Printf.sprintf "%s is not a p2pkh address" betas));
+      if tmlock < 1l then raise (Failure ("locktime must be positive"));
+      if rel && tmlock >= 500000000l then raise (Failure ("relative lock time must be given in number of blocks"));
+      let (_,av) = alpha in
+      let (_,bv) = beta in
+      let (gamma,scrl) = Commands.createptlc av bv tmlock rel pid in
+      if jb then
+	begin
+	  let redscr = Buffer.create 10 in
+	  List.iter (fun x -> Buffer.add_string redscr (Printf.sprintf "%02x" x)) scrl;
+	  let jol = [("address",JsonStr(addr_pfgaddrstr (p2shaddr_addr gamma)));
+		     ("redeemscript",JsonStr(Buffer.contents redscr));
+		     ("propid",JsonStr(hashval_hexstring pid))]
+	  in
+	  print_jsonval oc (JsonObj(jol))
+	end
+      else
+	begin
+	  Printf.fprintf oc "P2sh address: %s\n" (addr_pfgaddrstr (p2shaddr_addr gamma));
+	  Printf.fprintf oc "Redeem script: ";
+	  List.iter (fun x -> Printf.fprintf oc "%02x" x) scrl;
+	  Printf.fprintf oc "\n";
+	  Printf.fprintf oc "Propid: %s\n" (hashval_hexstring pid);
+	end);
+  ac "verifycommitmenttx" "verifycommitmenttx alpha beta fundaddress fundid1 fundid2 alphaamt betaamt secrethash tmlock tx [json]"
     "Verify a commitment tx"
     (fun oc al ->
-      let (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,txs,jb) =
+      let (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,tmlcks,txs,jb) =
 	match al with
-	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;secrethashs;txs] ->
-	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,txs,false)
-	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;secrethashs;txs;"json"] ->
-	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,txs,true)
+	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;secrethashs;tmlcks;txs] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,tmlcks,txs,false)
+	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;secrethashs;tmlcks;txs;"json"] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,tmlcks,txs,true)
 	| _ -> raise BadCommandForm
       in
       let alpha = pfgaddrstr_addr alphas in
@@ -5517,6 +5553,7 @@ let initialize_commands () =
       let alphaamt = atoms_of_bars alphaamts in
       let betaamt = atoms_of_bars betaamts in
       let secrethash = hexstring_hashval secrethashs in
+      let tmlck = Int32.of_string tmlcks in
       let txs2 = hexstring_string txs in
       let (((tauin,tauout) as tau,(tausigsin,_)),_) = sei_stx seis (txs2,String.length txs2,None,0,0) in
       let inputsok =
@@ -5540,7 +5577,7 @@ let initialize_commands () =
 	  begin
 	    let (_,av) = alpha in
 	    let (_,bv) = beta in
-	    let (delta,scrl,secrh) = Commands.createhtlc2 bv av 28l true secrethash in
+	    let (delta,scrl,secrh) = Commands.createhtlc2 bv av tmlck true secrethash in
 	    if Some(p2shaddr_addr delta) = htlcaddr then
 	      begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
 		if jb then
@@ -5564,7 +5601,7 @@ let initialize_commands () =
 	  begin
 	    let (_,av) = alpha in
 	    let (_,bv) = beta in
-	    let (delta,scrl,secrh) = Commands.createhtlc2 av bv 28l true secrethash in
+	    let (delta,scrl,secrh) = Commands.createhtlc2 av bv tmlck true secrethash in
 	    if Some(p2shaddr_addr delta) = htlcaddr then
 	      begin (** it's good, could also check if alpha has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
 		if jb then
@@ -5605,6 +5642,115 @@ let initialize_commands () =
 	      print_jsonval oc (JsonBool(false))
 	    else
 	      Printf.fprintf oc "Inputs and outputs do not match the form of a commitment tx.\n"
+	  end);
+  ac "verifypropcommitmenttx" "verifypropcommitmenttx alpha beta fundaddress fundid1 fundid2 alphaamt betaamt propid tmlock tx [json]"
+    "Verify a prop commitment tx"
+    (fun oc al ->
+      let (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,pids,tmlcks,txs,jb) =
+	match al with
+	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;pids;tmlcks;txs] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,pids,txs,tmlcks,false)
+	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;pids;txs;tmlcks;"json"] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,pids,txs,tmlcks,true)
+	| _ -> raise BadCommandForm
+      in
+      let alpha = pfgaddrstr_addr alphas in
+      let beta = pfgaddrstr_addr betas in
+      let gamma = pfgaddrstr_addr gammas in
+      let fundid1 = hexstring_hashval fundid1s in
+      let fundid2 = hexstring_hashval fundid2s in
+      let alphaamt = atoms_of_bars alphaamts in
+      let betaamt = atoms_of_bars betaamts in
+      let pid = hexstring_hashval pids in
+      let tmlck = Int32.of_string tmlcks in
+      let txs2 = hexstring_string txs in
+      let (((tauin,tauout) as tau,(tausigsin,_)),_) = sei_stx seis (txs2,String.length txs2,None,0,0) in
+      let inputsok =
+	match tauin with
+	| [(a1,aid1);(a2,aid2)] when a1 = gamma && a2 = gamma && aid1 = fundid1 && aid2 = fundid2 -> true
+	| _ -> false
+      in
+      let (outputsok,ptlcaddr) =
+	match tauout with
+	| [(a01,(Some(aaddr2,0L,false),Currency(aamt2)));(a02,(Some(baddr2,0L,false),Currency(bamt2)))] when aamt2 = alphaamt && bamt2 = betaamt && a01 = gamma && a02 = gamma ->
+	    if payaddr_addr aaddr2 = alpha then (*** this must be a commitment for beta to close the channel ***)
+	      (2,Some(payaddr_addr baddr2))
+	    else if payaddr_addr baddr2 = beta then (*** this must be a commitment for alpha to close the channel ***)
+	      (1,Some(payaddr_addr aaddr2))
+	    else
+	      (0,None)
+	| _ -> (0,None)
+      in
+      if inputsok then
+	if outputsok = 1 then
+	  begin
+	    let (_,av) = alpha in
+	    let (_,bv) = beta in
+	    let (delta,scrl) = Commands.createptlc bv av tmlck true pid in
+	    if Some(p2shaddr_addr delta) = ptlcaddr then
+	      begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+		if jb then
+		  print_jsonval oc (JsonObj([("result",JsonBool(true));("commitmentfor",JsonStr(alphas))]))
+		else
+		  Printf.fprintf oc "Valid prop commitment tx for %s\n" alphas
+	      end
+	    else
+	      begin
+		if jb then
+		  print_jsonval oc (JsonBool(false))
+		else
+		  begin
+		    Printf.fprintf oc "Appears to be a prop commitment tx for alpha, but ptlc address mismatch:\nFound %s\nExpected %s\n"
+		      (addr_pfgaddrstr (p2shaddr_addr delta))
+		      (match ptlcaddr with Some(delta2) -> addr_pfgaddrstr delta2 | None -> "None")
+		  end
+	      end
+	  end
+	else if outputsok = 2 then
+	  begin
+	    let (_,av) = alpha in
+	    let (_,bv) = beta in
+	    let (delta,scrl) = Commands.createptlc av bv tmlck true pid in
+	    if Some(p2shaddr_addr delta) = ptlcaddr then
+	      begin (** it's good, could also check if alpha has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+		if jb then
+		  print_jsonval oc (JsonObj([("result",JsonBool(true));("propcommitmentfor",JsonStr(betas))]))
+		else
+		  Printf.fprintf oc "Valid prop commitment tx for %s\n" betas
+	      end
+	    else
+	      begin
+		if jb then
+		  print_jsonval oc (JsonBool(false))
+		else
+		  begin
+		    Printf.fprintf oc "Appears to be a prop commitment tx for beta, but htlc address mismatch:\nFound %s\nExpected %s\n"
+		      (addr_pfgaddrstr (p2shaddr_addr delta))
+		      (match ptlcaddr with Some(delta2) -> addr_pfgaddrstr delta2 | None -> "None")
+		  end
+	      end
+	  end
+	else
+	  begin
+	    if jb then
+	      print_jsonval oc (JsonBool(false))
+	    else
+	      Printf.fprintf oc "Outputs do not match the form of a prop commitment tx.\n"
+	  end
+      else
+	if not (outputsok = 0) then
+	  begin
+	    if jb then
+	      print_jsonval oc (JsonBool(false))
+	    else
+	      Printf.fprintf oc "Inputs do not match the form of a prop commitment tx.\n"
+	  end
+	else
+	  begin
+	    if jb then
+	      print_jsonval oc (JsonBool(false))
+	    else
+	      Printf.fprintf oc "Inputs and outputs do not match the form of a prop commitment tx.\n"
 	  end);
   ac "createmultisig" "createmultisig <m> <jsonarrayofpubkeys>" "Create an m-of-n script and address"
     (fun oc al ->

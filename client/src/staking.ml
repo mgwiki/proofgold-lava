@@ -572,11 +572,13 @@ let stakingthread () =
 			              try
 				        let unsupportederror alpha h = log_string (Printf.sprintf "Could not find asset %s at address %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha)) in
 				        let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin !dync unsupportederror) in
-				        if tx_signatures_valid blkh tm al ((tauin,tauout),sg) then
+                                        begin
+                                          match tx_signatures_valid blkh tm al ((tauin,tauout),sg) with
+                                          | Some(provenl) ->
 				          begin
                                             let counter1 = !counter in
                                             try
-				              let nfee = ctree_supports_tx counter true true false !dyntht !dynsigt blkh (tauin,tauout) !dync in
+				              let nfee = ctree_supports_tx counter true true false !dyntht !dynsigt blkh provenl (tauin,tauout) !dync in
 				              if nfee > 0L then (*** note: nfee is negative of the fee, not the fee itself ***)
 				                begin
                                                 (*				  log_string (Printf.sprintf "tx %s has negative fees %Ld; removing from pool\n" (hashval_hexstring h) nfee); *)
@@ -603,11 +605,12 @@ let stakingthread () =
 					          end
                                             with _ -> counter := counter1
 				          end
-				        else
+                                          | None ->
 				          begin
                                             (*			      log_string (Printf.sprintf "tx %s has an invalid signature; removing from pool\n" (hashval_hexstring h)); *)
 				            remove_from_txpool h;
 				          end
+                                        end
 			              with exn ->
 				        begin
                                           (*			    log_string (Printf.sprintf "Exception %s raised while trying to validate tx %s; this may mean the tx is not yet supported so leaving it in the pool\n" (Printexc.to_string exn) (hashval_hexstring h)); *)
@@ -1044,11 +1047,13 @@ let stakingthread () =
 				      try
 				        let unsupportederror alpha h = log_string (Printf.sprintf "Could not find asset %s at address %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha)) in
 				        let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin !dync unsupportederror) in
-				        if tx_signatures_valid blkh tm al ((tauin,tauout),sg) then
+                                        begin
+				          match tx_signatures_valid blkh tm al ((tauin,tauout),sg) with
+                                          | Some(provenl) ->
 				          begin
                                             let counter1 = !counter in
                                             try
-					      let nfee = ctree_supports_tx counter true true false !dyntht !dynsigt blkh (tauin,tauout) !dync in
+					      let nfee = ctree_supports_tx counter true true false !dyntht !dynsigt blkh provenl (tauin,tauout) !dync in
 					      if nfee > 0L then (*** note: nfee is negative of the fee, not the fee itself ***)
 					        begin
                                                   (*				  log_string (Printf.sprintf "tx %s has negative fees %Ld; removing from pool\n" (hashval_hexstring h) nfee); *)
@@ -1075,11 +1080,12 @@ let stakingthread () =
 					          end
                                             with _ -> counter := counter1
 				          end
-				        else
+                                          | None ->
 				          begin
                                             (*			      log_string (Printf.sprintf "tx %s has an invalid signature; removing from pool\n" (hashval_hexstring h)); *)
 					    remove_from_txpool h;
 				          end
+                                        end
 				      with exn ->
 				        begin
                                           (*			    log_string (Printf.sprintf "Exception %s raised while trying to validate tx %s; this may mean the tx is not yet supported so leaving it in the pool\n" (Printexc.to_string exn) (hashval_hexstring h)); *)
