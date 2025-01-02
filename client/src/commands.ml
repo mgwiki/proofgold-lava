@@ -1825,6 +1825,49 @@ let simple_htlc_script bl stk =
       end
   | _ -> raise Not_found
 
+let simple_ptlc_script bl stk =
+  if not (stk = []) then raise Not_found; (** assume there is no partial signature yet, for simplicity **)
+  match bl with
+  | (0x63::0x20::br) -> (*** 32 bytes ***)
+      begin
+	try
+	  let (pidbl,br) = next_bytes 32 br in
+	  match br with
+	  | (0xb5::0x75::0x76::0xa9::0x14::br) ->
+	      begin
+		try
+		  let (alphabl,br) = next_bytes 20 br in
+		  match br with
+		  | (0x67::0x04::br) ->
+		      begin
+			try
+			  let (locktmbl,br) = next_bytes 4 br in
+			  match br with
+			  | (lkop::0x75::0x76::0xa9::0x14::br) when lkop = 0xb1 || lkop = 0xb2 ->
+			      begin
+				try
+				  let (betabl,br) = next_bytes 20 br in
+				  if br = [0x68;0x88;0xac] then
+				    (bytelist_be160 alphabl,
+				     bytelist_be160 betabl,
+				     int64_of_big_int (inum_le locktmbl),
+				     lkop = 0xb2,
+                                     bytelist_be256 pidbl)
+				  else
+				    raise Not_found
+				with _ -> raise Not_found
+			      end
+			  | _ -> raise Not_found
+			with _ -> raise Not_found
+		      end
+		  | _ -> raise Not_found
+		with _ -> raise Not_found
+	      end
+	  | _ -> raise Not_found
+	with _ -> raise Not_found
+      end
+  | _ -> raise Not_found
+
 let simple_veto_script bl stk =
   if not (stk = []) then raise Not_found; (** assume there is no partial signature yet, for simplicity **)
   match bl with
@@ -2056,7 +2099,33 @@ let signtx_p2sh_partialsig_2 secrl kl beta taue psig bl stk =
                        (P2shSignat(sscr),true)
                     | _ -> raise Not_found
             with Not_found ->
-	      raise (Failure "unhandled signtx_p2sh case")	    
+              try
+	        let (alpha,beta,locktm,rel,pid) = simple_ptlc_script bl stk in (* two cases: we have the key for alpha (and we sign assuming the prop with propid has been proven), or we have the key for beta (allowing signing before locktm is reached) *)
+                try
+	          let v = signtx_p2pkh kl alpha taue in
+	          match v with
+	          | P2pkhSignat(Some(x,y),b,(r,s)) ->
+	             let pubkeybytes = pubkey_bytelist (x,y) b in
+	             let sscr = (*** signature script PUSH (0,r,s) PUSH pubkey PUSH 1 (for IF) PUSH bl ***)
+		       push_bytes (0::blnum_be r 32 @ blnum_be s 32) @ push_bytes pubkeybytes @ 0x51::push_bytes bl
+	             in
+	             (P2shSignat(sscr),true)
+	          | _ -> raise Not_found
+                with
+                | Not_found ->
+                   try
+                     let v = signtx_p2pkh kl beta taue in
+	             match v with
+	             | P2pkhSignat(Some(x,y),b,(r,s)) ->
+	                let pubkeybytes = pubkey_bytelist (x,y) b in
+	                let sscr = (*** signature script PUSH (0,r,s) PUSH pubkey PUSH 0 (for ELSE) PUSH bl ***)
+		          push_bytes (0::blnum_be r 32 @ blnum_be s 32) @ push_bytes pubkeybytes @ 0::push_bytes bl
+	                in
+	                (P2shSignat(sscr),true)
+	             | _ -> raise Not_found
+                   with Not_found -> raise Not_found
+              with Not_found ->
+	        raise (Failure "unhandled signtx_p2sh case")	    
 
 let signtx_p2sh_partialsig secrl kl beta taue psig =
   let stk = script_stack psig [] in
@@ -3930,6 +3999,33 @@ let createhtlc2 alpha beta tmlock rel secrh =
 let createhtlc alpha beta tmlock rel secr =
   let secrh = sha256_bytelist (be256_bytelist secr) in
   createhtlc2 alpha beta tmlock rel secrh
+
+let createptlc alpha beta tmlock rel pid =
+  let scrl =
+    [0x63; (** OP_IF **)
+     0x20] (** PUSH 32 bytes (the propid) onto the stack **)
+  @ be256_bytelist pid
+  @ [0xb5; (** OP_PROVEN to make sure the prop with the propid has been proven **)
+     0x75; (** OP_DROP to pop the propid off the stack **)
+     0x76; (** OP_DUP -- duplicate the given pubkey for alpha **)
+     0xa9; (** OP_HASH160 -- hash the given pubkey **)
+     0x14] (** PUSH 20 bytes (should be hash of pubkey for alpha) onto the stack **)
+  @ be160_bytelist alpha
+  @ [0x67; (** OP_ELSE **)
+     0x04] (** PUSH 4 bytes onto the stack (lock time) **)
+  @ blnum_le (big_int_of_int32 tmlock) 4
+  @ [if rel then 0xb2 else 0xb1] (** CSV or CLTV to check if this branch is valid yet **)
+  @ [0x75; (** OP_DROP, drop the locktime from the stack **)
+     0x76; (** OP_DUP -- duplicate the given pubkey for beta **)
+     0xa9; (** OP_HASH160 -- hash the given pubkey **)
+     0x14] (** PUSH 20 bytes (should be hash of pubkey for beta) onto the stack **)
+  @ be160_bytelist beta
+  @ [0x68; (** OP_ENDIF **)
+     0x88; (** OP_EQUALVERIFY -- to ensure the given pubkey hashes to the right value **)
+     0xac] (** OP_CHECKSIG **)
+  in
+  let alpha = Script.hash160_bytelist scrl in
+  (alpha,scrl)
 
 let createmultisig2 m pubkeys =
   let n = List.length pubkeys in

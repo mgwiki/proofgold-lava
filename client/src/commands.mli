@@ -99,6 +99,7 @@ val collectable_bounties : out_channel -> hashval -> (addr * asset * asset) list
 val createatomicswap : hashval -> Be160.t -> Be160.t -> int32 -> p2shaddr * int list
 val createhtlc2 : Be160.t -> Be160.t -> int32 -> bool -> hashval -> p2shaddr * int list * hashval
 val createhtlc : Be160.t -> Be160.t -> int32 -> bool -> hashval -> p2shaddr * int list * hashval
+val createptlc : Be160.t -> Be160.t -> int32 -> bool -> hashval -> p2shaddr * int list
 val createmultisig2 : int -> (string * ((Z.t * Z.t) * bool)) list -> p2shaddr * int list
 val createmultisig : int -> jsonval -> p2shaddr * int list
 
