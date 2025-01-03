@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Copyright (c) 2017-2019 The Dalilcoin developers *)
@@ -85,6 +85,7 @@ val get_bestblock : unit -> (hashval * hashval * hashval) option * consensuswarn
 val get_bestblock_or_previous : unit -> (hashval * hashval * hashval) option
 val get_bestblock_print_warnings : out_channel -> (hashval * hashval * hashval) option
 val get_bestblock_cw_exception : exn -> hashval * hashval * hashval
+val get_bestblock_cw_exception2 : exn -> hashval * hashval * hashval
 
 val add_to_txpool : hashval -> Tx.stx -> unit
 val remove_from_txpool : hashval -> unit
@@ -96,3 +97,5 @@ val recursively_revalidate_blocks : hashval -> unit
 val reprocessblock : out_channel -> hashval -> hashval -> hashval -> unit
 
 val ensure_sync : unit -> unit
+
+val notsyncedsince : (hashval * float) option ref

@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
 (* Copyright (c) 2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2017-2019 The Dalilcoin developers *)
@@ -83,7 +83,7 @@ let ltcrpc_connect () =
            let _ (* ip1 *) = input_byte sin in
            let _ (* ip2 *) = input_byte sin in
            let _ (* ip3 *) = input_byte sin in
-           Printf.fprintf sout "POST / HTTP/1.1\n";
+           Printf.fprintf sout "POST /%s HTTP/1.1\n" (match !Config.ltcwallet with None -> "" | Some(w) -> Printf.sprintf "wallet/%s" w);
            Printf.fprintf sout "Host: %s:%d\n" onionaddr rport;
            Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth());
            Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
@@ -107,7 +107,7 @@ let ltcrpc_connect () =
        let sout = Unix.out_channel_of_descr s in
        set_binary_mode_in sin true;
        set_binary_mode_out sout true;
-       Printf.fprintf sout "POST / HTTP/1.1\n";
+       Printf.fprintf sout "POST /%s HTTP/1.1\n" (match !Config.ltcwallet with None -> "" | Some(w) -> Printf.sprintf "wallet/%s" w);
        Printf.fprintf sout "Host: %s:%d\n" !Config.ltcrpcip !Config.ltcrpcport;
        Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth());
        Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
@@ -161,7 +161,7 @@ let ltcrpc2_connect () =
            let _ (* ip1 *) = input_byte sin in
            let _ (* ip2 *) = input_byte sin in
            let _ (* ip3 *) = input_byte sin in
-           Printf.fprintf sout "POST / HTTP/1.1\n";
+           Printf.fprintf sout "POST /%s HTTP/1.1\n" (match !Config.ltcwallet with None -> "" | Some(w) -> Printf.sprintf "wallet/%s" w);
            Printf.fprintf sout "Host: %s:%d\n" onionaddr rport;
            Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth2());
            Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
@@ -185,7 +185,7 @@ let ltcrpc2_connect () =
        let sout = Unix.out_channel_of_descr s in
        set_binary_mode_in sin true;
        set_binary_mode_out sout true;
-       Printf.fprintf sout "POST / HTTP/1.1\n";
+       Printf.fprintf sout "POST /%s HTTP/1.1\n" (match !Config.ltcwallet2 with None -> "" | Some(w) -> Printf.sprintf "wallet/%s" w);
        Printf.fprintf sout "Host: %s:%d\n" !Config.ltcrpcip2 !Config.ltcrpcport2;
        Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth2());
        Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
@@ -804,7 +804,7 @@ let findpfgtx txs1 txs2 =
   let txs = ref "" in
   let pfgid ri =
     let (_,_,_,_,_,_,_,x) = ri in
-    Int32.logand x 0x80ffffl = 0x6650l
+    Int32.logand x 0xffffl = 0x6650l
   in
   while not (pfgid !rtxid) do
     incr i;
@@ -1351,12 +1351,13 @@ let rec ltc_process_block h =
 		  (Utils.log_string (Printf.sprintf "Adding burn %s for genesis header %s\n" txh (hashval_hexstring dnxt)));
 		  txhhs := txhh :: !txhhs;
 		  genl := (txhh,burned,dnxt)::!genl;
+                  let lblktx = hashpair hh txhh in
 		  if not (Db_outlinevals.dbexists (hashpair hh txhh)) then
 		    begin
 		      Db_outlinevals.dbput (hashpair hh txhh) (dnxt,tm,burned,(txid1,vout1),None,hashpair hh txhh,1L);
 		      (*** since the burn is presumably new, add to missing lists; this should never happen since the genesis phase has passed. ***)
-		      missingheaders := List.merge (fun (i,_) (j,_) -> compare i j) [(1L,dnxt)] !missingheaders;
-		      missingdeltas := List.merge (fun (i,_) (j,_) -> compare i j) [(1L,dnxt)] !missingdeltas;
+		      missingheaders := List.merge (fun (i,_,_) (j,_,_) -> compare i j) [(1L,dnxt,Some(lblktx))] !missingheaders;
+		      missingdeltas := List.merge (fun (i,_,_) (j,_,_) -> compare i j) [(1L,dnxt,Some(lblktx))] !missingdeltas;
 		      begin
 			try
 			  Hashtbl.find unburned_headers dnxt (hh,txhh);
@@ -1398,8 +1399,9 @@ let rec ltc_process_block h =
 			      (*** since the burn is presumably new, add to missing lists (unless it was staked by the current node which is handled in staking module) ***)
                                 if not (DbBlacklist.dbexists dprev || DbInvalidatedBlocks.dbexists dprev) then (** unless it's being thrown out in advance, put it on the missing lists **)
                                 begin
-			          missingheaders := List.merge (fun (i,_) (j,_) -> compare i j) [(currhght,dnxt)] !missingheaders;
-			          missingdeltas := List.merge (fun (i,_) (j,_) -> compare i j) [(currhght,dnxt)] !missingdeltas;
+                                  let lblktx = hashpair hh txhh in
+			          missingheaders := List.merge (fun (i,_,_) (j,_,_) -> compare i j) [(currhght,dnxt,Some(lblktx))] !missingheaders;
+			          missingdeltas := List.merge (fun (i,_,_) (j,_,_) -> compare i j) [(currhght,dnxt,Some(lblktx))] !missingdeltas;
                                 end;
 			      begin
 				try

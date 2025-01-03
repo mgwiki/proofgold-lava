@@ -62,11 +62,13 @@ echo let ltcrpconion = ref None >> src/config.ml
 echo let ltcrpcport = ref 9332 >> src/config.ml
 echo let ltcrpcuser = ref \"ltcuser\" >> src/config.ml
 echo let ltcrpcpass = ref \"ltcpass\" >> src/config.ml
+echo let ltcwallet = ref None >> src/config.ml
 echo let ltcrpcip2 = ref \"127.0.0.1\" >> src/config.ml
 echo let ltcrpconion2 = ref None >> src/config.ml
 echo let ltcrpcport2 = ref 9332 >> src/config.ml
 echo let ltcrpcuser2 = ref \"ltcuser\" >> src/config.ml
 echo let ltcrpcpass2 = ref \"ltcpass\" >> src/config.ml
+echo let ltcwallet2 = ref None >> src/config.ml
 echo let ltcaddresses = ref [] >> src/config.ml
 echo let ltctradeaddresses = ref [] >> src/config.ml
 echo let pfgtradeaddresses = ref [] >> src/config.ml
@@ -107,6 +109,7 @@ echo let min_conns_pow = ref 2 >> src/config.ml
 echo let min_conn_pow_target = ref 65536l >> src/config.ml
 echo let max_conn_pow_tries = ref 1000000 >> src/config.ml
 echo let explorer = ref false >> src/config.ml
+echo let waitforblock = ref 1800 >> src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"

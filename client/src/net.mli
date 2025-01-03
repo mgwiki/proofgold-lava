@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
 (* Copyright (c) 2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015-2016 The Qeditas developers *)
@@ -76,11 +76,11 @@ val insert_outlinesucc : hashval * hashval -> hashval * hashval -> unit
 val get_blockburns : hashval -> (hashval * hashval) list
 val insert_blockburn : hashval -> hashval * hashval -> unit
       
-val missingheaders : (int64 * hashval) list ref
-val missingdeltas : (int64 * hashval) list ref
+val missingheaders : (int64 * hashval * hashval option) list ref
+val missingdeltas : (int64 * hashval * hashval option) list ref
 
-val add_missing_header : int64 -> hashval -> unit
-val add_missing_delta : int64 -> hashval -> unit
+val add_missing_header : int64 -> hashval -> hashval option -> unit
+val add_missing_delta : int64 -> hashval -> hashval option -> unit
 val rem_missing_header : hashval -> unit
 val rem_missing_delta : hashval -> unit
 
