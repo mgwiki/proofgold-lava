@@ -1,4 +1,5 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
+(* Copyright (c) 2022 The Proofgold Love developers *)
 (* Copyright (c) 2020-2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015-2016 The Qeditas developers *)
@@ -563,7 +564,7 @@ let process_header_real sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght c
 	    begin
 	      Db_validheadervals.dbput (hashpair lbh ltxh) (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
               broadcast_inv [(int_of_msgtype Headers,h)];
-	      if not (DbBlockDelta.dbexists h) then add_missing_delta currhght h;
+	      if not (DbBlockDelta.dbexists h) then add_missing_delta currhght h (Some(lh));
 	      if dbp then
 	        begin
 	          DbBlockHeader.dbput h (bhd,bhs);
@@ -596,8 +597,9 @@ let process_header_real sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght c
     end
   else
     begin
+      let lh = hashpair lbh ltxh in
       Db_validheadervals.dbput (hashpair lbh ltxh) (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
-      if not (DbBlockDelta.dbexists h) then add_missing_delta currhght h;
+      if not (DbBlockDelta.dbexists h) then add_missing_delta currhght h (Some(lh));
     end
 
 let process_header sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1 =
@@ -718,9 +720,9 @@ let rec process_delta_ctree_history_real vfl h blkhght blk =
                      let pblkd = DbBlockDelta.dbget ph in
                      process_delta_ctree_history_real vfl ph pblkhght (pblkh,pblkd)
                    with Not_found ->
-                         add_missing_delta pblkhght ph
+                         add_missing_delta pblkhght ph None
                  with Not_found ->
-                       add_missing_header pblkhght ph
+                       add_missing_header pblkhght ph None
       end;
     process_delta_ctree_real h blkhght blk bhd blkdel
   with _ -> ()
@@ -775,9 +777,9 @@ let rec process_delta_ctree vfl h blkhght blk =
                      else (** not too far behind, so reprocess the recent ones **)
                        process_delta_ctree vfl ph pblkhght (pblkh,pblkd)
                    with Not_found ->
-                     add_missing_delta pblkhght ph
+                     add_missing_delta pblkhght ph None
                  with Not_found ->
-                   add_missing_header pblkhght ph
+                   add_missing_header pblkhght ph None
       end;
     process_delta_ctree_real h blkhght blk bhd blkdel
   with _ -> ()
@@ -1017,6 +1019,7 @@ let initialize_pfg_from_ltc sout lblkh =
 	    begin
 	      if lmedtm >= !Config.genesistimestamp && lmedtm <= Int64.add !Config.genesistimestamp 604800L then
 		begin
+                  let lh = hashpair lbh ltx in
 		  Db_outlinevals.dbput (hashpair lbh ltx) (dnxt,lmedtm,burned,(txid1,vout1),None,hashpair lbh ltx,1L);
 		  if invalid_or_blacklisted_p dnxt then
 		    Hashtbl.add blockinvalidated dnxt ()
@@ -1040,7 +1043,7 @@ let initialize_pfg_from_ltc sout lblkh =
 			    DbInvalidatedBlocks.dbput dnxt true
 			  end
 		      with Not_found ->
-                        add_missing_header 1L dnxt
+                        add_missing_header 1L dnxt (Some(lh))
 		    end
 		end
 	    end
@@ -1059,6 +1062,7 @@ let initialize_pfg_from_ltc sout lblkh =
 		      end
 		    else
 		      let currhght = Int64.add 1L prevhght in
+                      let lbhtx = hashpair lbh ltx in
 		      Db_outlinevals.dbput (hashpair lbh ltx) (dnxt,lmedtm,burned,(txid1,vout1),Some(lprevblkh,lprevtx),hashpair lbh ltx,currhght);
                       insert_outlinesucc (lprevblkh,lprevtx) (lbh,ltx);
 		      if invalid_or_blacklisted_p dnxt then
@@ -1101,7 +1105,7 @@ let initialize_pfg_from_ltc sout lblkh =
 					   if not (Hashtbl.mem missingh dnxt) && not (DbBlockHeader.dbexists dnxt) then
                                              begin
                                                Hashtbl.add missingh dnxt ();
-                                               add_missing_header currhght dnxt;
+                                               add_missing_header currhght dnxt (Some(lbhtx));
                                              end
 				   end
 				 else
@@ -1111,7 +1115,7 @@ let initialize_pfg_from_ltc sout lblkh =
 				   end
 			    end
 			  with Not_found ->
-                            add_missing_header currhght dnxt
+                            add_missing_header currhght dnxt (Some(lbhtx))
 			end
 		  with Not_found ->
 		    Printf.fprintf sout "Missing outline info for %s:%s\n" (hashval_hexstring lprevblkh) (hashval_hexstring lprevtx)
@@ -1209,12 +1213,12 @@ let initialize_pfg_from_ltc sout lblkh =
                        if not (Hashtbl.mem missingh dbh) && not (DbBlockHeader.dbexists dbh) then
                          begin
                            Hashtbl.add missingh dbh ();
-                           add_missing_header hght dbh
+                           add_missing_header hght dbh (Some(lh))
                          end;
                        if not (Hashtbl.mem missingd dbh) && not (DbBlockDelta.dbexists dbh) then
                          begin
                            Hashtbl.add missingd dbh ();
-                           add_missing_delta hght dbh
+                           add_missing_delta hght dbh (Some(lh))
                          end;
                      with
                      | Not_found ->
@@ -1242,8 +1246,8 @@ let initialize_pfg_from_ltc sout lblkh =
   handleltcblock lblkh true;
   (*** remove dead blocks (no recent descendant/permanent orphans) ***)
   (*** don't worry if dead blocks stay on the corresponding hash tables; they should never be added to missing anyway ***)
-  missingheaders := List.filter (fun (_,h) -> Hashtbl.mem liveblocks h) !missingheaders;
-  missingdeltas := List.filter (fun (_,h) -> Hashtbl.mem liveblocks h) !missingdeltas
+  missingheaders := List.filter (fun (_,h,_) -> Hashtbl.mem liveblocks h) !missingheaders;
+  missingdeltas := List.filter (fun (_,h,_) -> Hashtbl.mem liveblocks h) !missingdeltas
                                
 let collect_inv m cnt tosend txinv =
   if (DbCTreeElt.dbexists !genesisledgerroot) || (DbCTreeAtm.dbexists !genesisledgerroot) then (tosend := (int_of_msgtype CTreeElement,!genesisledgerroot)::!tosend; incr cnt);
@@ -1512,10 +1516,11 @@ let deserialize_exc_protect cs f =
 
 let rec rec_add_to_missingheaders (lbk,ltx) =
   try
+    let lbktx = hashpair lbk ltx in
     let (dbh,_,_,(_,_),par,_,currhght) = Db_outlinevals.dbget (hashpair lbk ltx) in
     if not (DbBlockHeader.dbexists dbh) then
       begin
-        add_missing_header currhght dbh;
+        add_missing_header currhght dbh (Some(lbktx));
         match par with
         | None -> ()
         | Some(plbk,pltx) ->
@@ -1561,7 +1566,7 @@ let rec rec_add_to_missingdeltas (lbk,ltx) =
     let (dbh,_,_,(_,_),par,_,currhght) = Db_outlinevals.dbget lh in
     if Db_validheadervals.dbexists lh && not (DbBlockDelta.dbexists dbh) then
       begin
-        add_missing_delta currhght dbh;
+        add_missing_delta currhght dbh (Some(lh));
         match par with
         | None -> ()
         | Some(plbk,pltx) ->
@@ -1946,9 +1951,11 @@ Hashtbl.add msgtype_handler STx
 		       if tx_valid tau then
 			 let unsupportederror alpha k = log_string (Printf.sprintf "Could not find asset %s at address %s in ledger %s; throwing out tx %s\n" (hashval_hexstring k) (Cryptocurr.addr_pfgaddrstr alpha) (hashval_hexstring lr) (hashval_hexstring h)) in
 			 let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin (CHash(lr)) unsupportederror) in
-			 if tx_signatures_valid nblkh tmstmp al stau then (*** accept it if it will be valid in the next block ***)
+                         begin
+                           match tx_signatures_valid nblkh tmstmp al stau with (*** accept it if it will be valid in the next block ***)
+                           | Some(provenl) ->
 			   begin
-			     let nfee = ctree_supports_tx (ref 0) true true false (lookup_thytree tr) (lookup_sigtree sr) nblkh tau (CHash(lr)) in
+			     let nfee = ctree_supports_tx (ref 0) true true false (lookup_thytree tr) (lookup_sigtree sr) nblkh provenl tau (CHash(lr)) in
 			     let fee = Int64.sub 0L nfee in
 			     if fee >= minfee then
 			       begin
@@ -1963,8 +1970,9 @@ Hashtbl.add msgtype_handler STx
 			     else
 			       (log_string (Printf.sprintf "ignoring tx %s with low fee of %s bars (%Ld atoms)\n" (hashval_hexstring h) (Cryptocurr.bars_of_atoms fee) fee))
 			   end
-			 else
-			   (log_string (Printf.sprintf "ignoring tx %s since signatures are not valid at the next block height of %Ld\n" (hashval_hexstring h) nblkh))
+			   | None ->
+			      (log_string (Printf.sprintf "ignoring tx %s since signatures are not valid at the next block height of %Ld\n" (hashval_hexstring h) nblkh))
+                         end
 		       else
 			 (log_string (Printf.sprintf "misbehaving peer? [invalid Tx %s]\n" (hashval_hexstring h)))
 		     end
@@ -2048,8 +2056,23 @@ let get_bestblock_print_warnings s =
   List.iter (print_consensus_warning s) cwl;
   b;;
 
-let get_bestblock_cw_exception e =
-  let (best,cwl) = get_bestblock() in
+let notsyncedsince = ref None;;
+
+let notsynced h =
+  match !notsyncedsince with
+  | None -> notsyncedsince := Some(h,Unix.gettimeofday())
+  | _ -> ();;
+
+let longtime_nosync h =
+  match !notsyncedsince with
+  | None -> false
+  | Some(k,tm) ->
+     if h = k then
+       Unix.gettimeofday() -. tm > (float_of_int !Config.waitforblock /. 2.0)
+     else
+       (notsyncedsince := None; false)
+
+let get_bestblock_cw_exception_b dbh lbk ltx cwl e =
   begin
     try
       let cw =
@@ -2062,14 +2085,30 @@ let get_bestblock_cw_exception e =
       in
       print_consensus_warning !log cw;
       log_string (Printf.sprintf "possibly not synced; delaying staking\n");
+      notsynced dbh;
       raise Exit
     with
     | Not_found -> ()
     | Exit -> raise e
   end;
+  notsyncedsince := None; (dbh,lbk,ltx)
+
+let get_bestblock_cw_exception e =
+  let (best,cwl) = get_bestblock() in
   match best with
-  | Some(dbh,lbk,ltx) -> (dbh,lbk,ltx)
-  | None -> raise e;;
+  | Some(dbh,lbk,ltx) ->
+     get_bestblock_cw_exception_b dbh lbk ltx cwl e
+  | None -> raise e
+
+let get_bestblock_cw_exception2 e =
+  let (best,cwl) = get_bestblock() in
+  match best with
+  | Some(dbh,lbk,ltx) ->
+     if !Config.waitforblock <= 0 || longtime_nosync dbh then
+       (dbh,lbk,ltx)
+     else
+       get_bestblock_cw_exception_b dbh lbk ltx cwl e
+  | None -> raise e
 
 let print_best_block () =
   let (b,cwl) = get_bestblock () in

@@ -1,4 +1,5 @@
 (* Copyright (c) 2021-2025 The Proofgold Lava developers *)
+(* Copyright (c) 2022 The Proofgold Love developers *)
 (* Copyright (c) 2020-2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015-2016 The Qeditas developers *)
@@ -527,6 +528,38 @@ let privkey_in_wallet_p alpha =
   else
     false
 
+let privkey_from_wallet xs =
+  let s kl =
+    let (k,c,_,_,_,_) = List.find (fun (_,_,_,_,h,_) -> h = xs) kl in
+    (k,c)
+  in
+  try
+    s !walletkeys_staking
+  with Not_found ->
+    try
+      s !walletkeys_nonstaking
+    with Not_found ->
+      try
+        s !walletkeys_staking_fresh
+      with Not_found ->
+        s !walletkeys_nonstaking_fresh
+
+let privkey_and_pubkey_from_wallet xs =
+  let s kl =
+    let (k,c,pubkey,_,_,_) = List.find (fun (_,_,_,_,h,_) -> h = xs) kl in
+    ((k,c),pubkey)
+  in
+  try
+    s !walletkeys_staking
+  with Not_found ->
+    try
+      s !walletkeys_nonstaking
+    with Not_found ->
+      try
+        s !walletkeys_staking_fresh
+      with Not_found ->
+        s !walletkeys_nonstaking_fresh
+
 let endorsement_in_wallet_p alpha =
   let (p,xs) = alpha in
   if p = 0 || p = 1 then
@@ -597,10 +630,33 @@ let bytelist_of_hexstring h =
   done;
   !bl
 
+let ltctopfgaddr oc a =
+  let alpha = ltcaddrstr_addr a in
+  let a2 = addr_pfgaddrstr alpha in
+  Printf.fprintf oc "Proofgold address %s corresponds to Litecoin address %s\n" a2 a
+
 let btctopfgaddr oc a =
   let alpha = btcaddrstr_addr a in
   let a2 = addr_pfgaddrstr alpha in
   Printf.fprintf oc "Proofgold address %s corresponds to Bitcoin address %s\n" a2 a
+
+let pfgtobtcaddr oc a =
+  let alpha = pfgaddrstr_addr a in
+  let (i,h) = alpha in
+  if i > 1 then raise (Failure (Printf.sprintf "%s is not a pay address." a));
+  let a2 = payaddr_btcaddrstr (i=1,h) in
+  Printf.fprintf oc "Proofgold address %s corresponds to Bitcoin address %s\n" a a2
+
+let pfgtobtcwif oc w =
+  let (k,b) = privkey_from_wif w in
+  Printf.fprintf oc "%s\n" (btcwif k b)
+
+let pfgtoltcaddr oc a =
+  let alpha = pfgaddrstr_addr a in
+  let (i,h) = alpha in
+  if i > 1 then raise (Failure (Printf.sprintf "%s is not a pay address." a));
+  let a2 = payaddr_ltcaddrstr (i=1,h) in
+  Printf.fprintf oc "Proofgold address %s corresponds to Bitcoin address %s\n" a a2
 
 let importprivkey_real oc (k,b) cls report =
   match Secp256k1.smulp k Secp256k1._g with
@@ -1833,6 +1889,49 @@ let simple_htlc_script bl stk =
       end
   | _ -> raise Not_found
 
+let simple_ptlc_script bl stk =
+  if not (stk = []) then raise Not_found; (** assume there is no partial signature yet, for simplicity **)
+  match bl with
+  | (0x63::0x20::br) -> (*** 32 bytes ***)
+      begin
+	try
+	  let (pidbl,br) = next_bytes 32 br in
+	  match br with
+	  | (0xb5::0x75::0x76::0xa9::0x14::br) ->
+	      begin
+		try
+		  let (alphabl,br) = next_bytes 20 br in
+		  match br with
+		  | (0x67::0x04::br) ->
+		      begin
+			try
+			  let (locktmbl,br) = next_bytes 4 br in
+			  match br with
+			  | (lkop::0x75::0x76::0xa9::0x14::br) when lkop = 0xb1 || lkop = 0xb2 ->
+			      begin
+				try
+				  let (betabl,br) = next_bytes 20 br in
+				  if br = [0x68;0x88;0xac] then
+				    (bytelist_be160 alphabl,
+				     bytelist_be160 betabl,
+				     int64_of_big_int (inum_le locktmbl),
+				     lkop = 0xb2,
+                                     bytelist_be256 pidbl)
+				  else
+				    raise Not_found
+				with _ -> raise Not_found
+			      end
+			  | _ -> raise Not_found
+			with _ -> raise Not_found
+		      end
+		  | _ -> raise Not_found
+		with _ -> raise Not_found
+	      end
+	  | _ -> raise Not_found
+	with _ -> raise Not_found
+      end
+  | _ -> raise Not_found
+
 let simple_veto_script bl stk =
   if not (stk = []) then raise Not_found; (** assume there is no partial signature yet, for simplicity **)
   match bl with
@@ -2064,7 +2163,33 @@ let signtx_p2sh_partialsig_2 secrl kl beta taue psig bl stk =
                        (P2shSignat(sscr),true)
                     | _ -> raise Not_found
             with Not_found ->
-	      raise (Failure "unhandled signtx_p2sh case")	    
+              try
+	        let (alpha,beta,locktm,rel,pid) = simple_ptlc_script bl stk in (* two cases: we have the key for alpha (and we sign assuming the prop with propid has been proven), or we have the key for beta (allowing signing before locktm is reached) *)
+                try
+	          let v = signtx_p2pkh kl alpha taue in
+	          match v with
+	          | P2pkhSignat(Some(x,y),b,(r,s)) ->
+	             let pubkeybytes = pubkey_bytelist (x,y) b in
+	             let sscr = (*** signature script PUSH (0,r,s) PUSH pubkey PUSH 1 (for IF) PUSH bl ***)
+		       push_bytes (0::blnum_be r 32 @ blnum_be s 32) @ push_bytes pubkeybytes @ 0x51::push_bytes bl
+	             in
+	             (P2shSignat(sscr),true)
+	          | _ -> raise Not_found
+                with
+                | Not_found ->
+                   try
+                     let v = signtx_p2pkh kl beta taue in
+	             match v with
+	             | P2pkhSignat(Some(x,y),b,(r,s)) ->
+	                let pubkeybytes = pubkey_bytelist (x,y) b in
+	                let sscr = (*** signature script PUSH (0,r,s) PUSH pubkey PUSH 0 (for ELSE) PUSH bl ***)
+		          push_bytes (0::blnum_be r 32 @ blnum_be s 32) @ push_bytes pubkeybytes @ 0::push_bytes bl
+	                in
+	                (P2shSignat(sscr),true)
+	             | _ -> raise Not_found
+                   with Not_found -> raise Not_found
+              with Not_found ->
+	        raise (Failure "unhandled signtx_p2sh case")	    
 
 let signtx_p2sh_partialsig secrl kl beta taue psig =
   let stk = script_stack psig [] in
@@ -2153,7 +2278,7 @@ let rec signtx_ins rdmscrl secrl kl taue inpl al outpl sl rl (rsl:gensignat_or_r
 			    let obl = assetobl a in
 			    let (s1,rl1) = getsig s rl in
 			    begin
-			      let (b,_,_,_) = check_spend_obligation_upto_blkh (Some(bday)) alpha taue s1 obl in (*** allow signing now even if it cannot be confirmed until later ***)
+			      let (b,_,_,_,_) = check_spend_obligation_upto_blkh (Some(bday)) alpha taue s1 obl in (*** allow signing now even if it cannot be confirmed until later ***)
 			      if b then
 				match obl with
 				| None -> 
@@ -2233,11 +2358,11 @@ let rec signtx_ins rdmscrl secrl kl taue inpl al outpl sl rl (rsl:gensignat_or_r
 		try
 		  let (s1,rl1) = getsig s rl in
 		  let (p,av) = alpha in
-		  let (b,_,_,_) =
+		  let (b,_,_,_,_) =
 		    try
 		      check_spend_obligation_upto_blkh (Some(bday)) alpha taue s1 obl (*** allow signing now even if it cannot be confirmed until later ***)
 		    with BadOrMissingSignature ->
-		      (false,None,None,None)
+		      (false,None,None,None,[])
 		  in
 		  if b then
 		    begin
@@ -2314,7 +2439,7 @@ let rec signtx_outs rdmscrl secrl kl taue outpl sl rl rsl co =
 	| (Some(s)::sr) ->
 	    begin
 	      let (s1,rl1) = getsig s rl in
-	      let (b,_,_,_) = check_spend_obligation_upto_blkh None (payaddr_addr alpha) taue s1 None in
+	      let (b,_,_,_,_) = check_spend_obligation_upto_blkh None (payaddr_addr alpha) taue s1 None in
 	      if b then
 		signtx_outs rdmscrl secrl kl taue outpr sr (rl1 alpha) (Some(GenSignatReal(s1))::rsl) co
 	      else
@@ -2478,19 +2603,23 @@ let savetxtopool blkh tm lr staustr =
   if tx_valid tau then
     let unsupportederror alpha h = Printf.printf "Could not find asset %s at address %s in ledger %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha) (hashval_hexstring lr) in
     let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin (CHash(lr)) unsupportederror) in
-    if tx_signatures_valid blkh tm al (tau,tausg) then
-      let txid = hashstx (tau,tausg) in
-      savetxtopool_real txid (tau,tausg)
-    else
-      Printf.printf "Invalid or incomplete signatures\n"
+    begin
+      match tx_signatures_valid blkh tm al (tau,tausg) with
+      | Some(provenl) -> (** go ahead and put it in the pool whether or not the props are proven; it can't confirm until they're proven **)
+         let txid = hashstx (tau,tausg) in
+         savetxtopool_real txid (tau,tausg)
+      | None ->
+         Printf.printf "Invalid or incomplete signatures\n"
+    end
   else
     Printf.printf "Invalid tx\n"
 
-let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
+let validatetx4 blkh tm thtr sgtr ltr txbytes stau transform =
   let ((tauin,tauout) as tau,tausg) = stau in
-  if tx_valid_oc oc tau then
+  if tx_valid tau then
     begin
-      let unsupportederror alpha h = Printf.fprintf oc "Could not find asset %s at address %s in ledger %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha) (hashval_hexstring (ctree_hashroot ltr)) in
+      let unsupportederror alpha h = ()
+      in
       let retval () =
 	if transform then
 	  begin
@@ -2498,18 +2627,69 @@ let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
 	      match tx_octree_trans true false blkh tau (Some(ltr)) with
 	      | None -> None
 	      | Some(ltr2) -> Some(txout_update_ottree tauout thtr,txout_update_ostree tauout sgtr,ltr2)
-	    with exn -> Printf.fprintf oc "Tx transformation problem %s\n" (Printexc.to_string exn); flush oc; None
+	    with exn -> None
 	  end
 	else
 	  None
       in
-      let validatetx_report() =
+      let validatetx_report provenl =
+	let stxh = hashstx stau in
+	begin
+	  try
+	    verbose_supportedcheck := None;
+	    let nfee = ctree_supports_tx (ref 0) true true false thtr sgtr blkh provenl tau ltr in
+	    verbose_supportedcheck := None;
+	    retval()
+	  with
+	  | NotSupported ->
+	      verbose_supportedcheck := None;
+	      None
+	  | exn ->
+	      verbose_supportedcheck := None;
+	      None
+	end
+      in
+      let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin ltr unsupportederror) in
+      try
+	let (mbha,mbhb,mtm,provenl) = tx_signatures_valid_asof_blkh al (tau,tausg) in
+        let mbh = if blkh < Utils.lockingfixsoftforkheight then mbha else mbhb in
+        validatetx_report provenl
+      with
+      | BadOrMissingSignature ->
+	  validatetx_report []
+      | e ->
+	  validatetx_report []
+    end
+  else
+    None
+
+let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
+  let ((tauin,tauout) as tau,tausg) = stau in
+  if tx_valid_oc oc tau then
+    begin
+      let unsupportederror alpha h =
+        Printf.fprintf oc "Could not find asset %s at address %s in ledger %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha) (hashval_hexstring (ctree_hashroot ltr))
+      in
+      let retval () =
+	if transform then
+	  begin
+	    try
+	      match tx_octree_trans true false blkh tau (Some(ltr)) with
+	      | None -> None
+	      | Some(ltr2) -> Some(txout_update_ottree tauout thtr,txout_update_ostree tauout sgtr,ltr2)
+	    with exn ->
+                  Printf.fprintf oc "Tx transformation problem %s\n" (Printexc.to_string exn); flush oc; None
+	  end
+	else
+	  None
+      in
+      let validatetx_report provenl =
 	let stxh = hashstx stau in
 	Printf.fprintf oc "Tx is valid and has id %s\n" (hashval_hexstring stxh);
 	begin
 	  try
 	    verbose_supportedcheck := Some(oc);
-	    let nfee = ctree_supports_tx (ref 0) true true false thtr sgtr blkh tau ltr in
+	    let nfee = ctree_supports_tx (ref 0) true true false thtr sgtr blkh provenl tau ltr in
 	    verbose_supportedcheck := None;
 	    let minfee = Int64.mul (Int64.of_int txbytes) !Config.minrelayfee in
 	    let fee = Int64.sub 0L nfee in
@@ -2536,24 +2716,24 @@ let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
       in
       let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin ltr unsupportederror) in
       try
-	let (mbha,mbhb,mtm) = tx_signatures_valid_asof_blkh al (tau,tausg) in
+	let (mbha,mbhb,mtm,provenl) = tx_signatures_valid_asof_blkh al (tau,tausg) in
         let mbh = if blkh < Utils.lockingfixsoftforkheight then mbha else mbhb in
 	match (mbh,mtm) with
-	| (None,None) -> validatetx_report()
+	| (None,None) -> validatetx_report provenl
 	| (Some(bh2),None) ->
 	    if bh2 > blkh then
 	      begin
 		Printf.fprintf oc "Tx is not valid until block height %Ld\n" bh2;
 		flush oc
 	      end;
-	    validatetx_report()
+	    validatetx_report provenl
 	| (None,Some(tm2)) ->
 	    if tm2 > tm then
 	      begin
 		Printf.fprintf oc "Tx is not valid until time %Ld\n" tm2;
 		flush oc
 	      end;
-	    validatetx_report()
+	    validatetx_report provenl
 	| (Some(bh2),Some(tm2)) ->
 	    if (bh2 > blkh) && (tm2 > tm) then
 	      begin
@@ -2570,20 +2750,24 @@ let validatetx3 oc blkh tm thtr sgtr ltr txbytes stau transform =
 		Printf.fprintf oc "Tx is not valid until time %Ld\n" tm2;
 		flush oc
 	      end;
-	    validatetx_report()
+	    validatetx_report provenl
       with
       | BadOrMissingSignature ->
 	  Printf.fprintf oc "Invalid or incomplete signatures\n";
-	  validatetx_report()
+	  validatetx_report []
       | e ->
 	  Printf.fprintf oc "Exception: %s\n" (Printexc.to_string e);
-	  validatetx_report()
+	  validatetx_report []
     end
   else
     (Printf.fprintf oc "Invalid tx\n"; None)
 
 let validatetx2 oc blkh tm tr sr lr txbytes stau =
-  ignore (validatetx3 oc blkh tm (lookup_thytree tr) (lookup_sigtree sr) (CHash(lr)) txbytes stau false)
+  match oc with
+  | Some(oc) ->
+     ignore (validatetx3 oc blkh tm (lookup_thytree tr) (lookup_sigtree sr) (CHash(lr)) txbytes stau false)
+  | None ->
+     ignore (validatetx4 blkh tm (lookup_thytree tr) (lookup_sigtree sr) (CHash(lr)) txbytes stau false)
 
 let validatebatchtxs oc blkh tm tr sr lr staul =
   let i = ref 0 in
@@ -2610,7 +2794,7 @@ let validatetx oc blkh tm tr sr lr staustr =
   let s = hexstring_string staustr in
   let l = String.length s in
   let (stau,_) = sei_stx seis (s,l,None,0,0) in
-  validatetx2 oc blkh tm tr sr lr l stau
+  validatetx2 (Some(oc)) blkh tm tr sr lr l stau
 
 let sendtx2 oc blkh tm tr sr lr txbytes stau =
   let ((tauin,tauout) as tau,tausg) = stau in
@@ -2619,14 +2803,14 @@ let sendtx2 oc blkh tm tr sr lr txbytes stau =
       let unsupportederror alpha h = Printf.fprintf oc "Could not find asset %s at address %s in ledger %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha) (hashval_hexstring lr) in
       let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin (CHash(lr)) unsupportederror) in
       try
-	let (mbha,mbhb,mtm) = tx_signatures_valid_asof_blkh al (tau,tausg) in
+	let (mbha,mbhb,mtm,provenl) = tx_signatures_valid_asof_blkh al (tau,tausg) in
         let mbh = if blkh < Utils.lockingfixsoftforkheight then mbha else mbhb in
 	let sendtxreal () =
 	  let stxh = hashstx stau in
 	  begin
 	    try
 	      let minfee = Int64.mul (Int64.of_int txbytes) !Config.minrelayfee in
-	      let nfee = ctree_supports_tx (ref 0) true true false (lookup_thytree tr) (lookup_sigtree sr) blkh tau (CHash(lr)) in
+	      let nfee = ctree_supports_tx (ref 0) true true false (lookup_thytree tr) (lookup_sigtree sr) blkh provenl tau (CHash(lr)) in
 	      let fee = Int64.sub 0L nfee in
 	      if fee >= minfee then
 		begin
@@ -3880,6 +4064,68 @@ let createhtlc alpha beta tmlock rel secr =
   let secrh = sha256_bytelist (be256_bytelist secr) in
   createhtlc2 alpha beta tmlock rel secrh
 
+let createbtchtlc2 alpha beta tmlock rel secrh =
+  let scrl =
+    [0x63; (** OP_IF **)
+     0x82; (** OP_SIZE **)
+     0x01;0x20; (** PUSH 0x20 (32) **)
+     0x88; (** OP_EQUALVERIFY to make sure the secret is 32 bytes **)
+     0xa8; (** OP_SHA256 **)
+     0x20] (** PUSH 32 bytes (the hash of the secret) onto the stack **)
+    @ be256_bytelist secrh
+    @ [0x88; (** OP_EQUALVERIFY to ensure the secret hashes to the expected hash **)
+       0x76; (** OP_DUP -- duplicate the given pubkey for alpha **)
+       0xa9; (** OP_HASH160 -- hash the given pubkey **)
+       0x14] (** PUSH 20 bytes (should be hash of pubkey for alpha) onto the stack **)
+    @ be160_bytelist alpha
+    @ [0x67; (** OP_ELSE **)
+       0x01] (** PUSH 1 byte onto the stack (lock time) **)
+    @ [tmlock]
+    @ [if rel then 0xb2 else 0xb1] (** CSV or CLTV to check if this branch is valid yet **)
+    @ [0x75; (** OP_DROP, drop the locktime from the stack **)
+       0x76; (** OP_DUP -- duplicate the given pubkey for beta **)
+       0xa9; (** OP_HASH160 -- hash the given pubkey **)
+       0x14] (** PUSH 20 bytes (should be hash of pubkey for beta) onto the stack **)
+    @ be160_bytelist beta
+    @ [0x68; (** OP_ENDIF **)
+       0x88; (** OP_EQUALVERIFY -- to ensure the given pubkey hashes to the right value **)
+       0xac] (** OP_CHECKSIG **)
+  in
+  let alpha = Script.hash160_bytelist scrl in
+  (alpha,scrl,secrh)
+
+let createbtchtlc alpha beta tmlock rel secr =
+  if tmlock < 17 || tmlock > 127 then raise (Failure "The code assumes the btc timelock is between 17 and 127.");
+  let secrh = sha256_bytelist (string_bytelist (hexstring_string (hashval_hexstring secr))) in
+  createbtchtlc2 alpha beta tmlock rel secrh
+
+let createptlc alpha beta tmlock rel pid =
+  let scrl =
+    [0x63; (** OP_IF **)
+     0x20] (** PUSH 32 bytes (the propid) onto the stack **)
+  @ be256_bytelist pid
+  @ [0xb5; (** OP_PROVEN to make sure the prop with the propid has been proven **)
+     0x75; (** OP_DROP to pop the propid off the stack **)
+     0x76; (** OP_DUP -- duplicate the given pubkey for alpha **)
+     0xa9; (** OP_HASH160 -- hash the given pubkey **)
+     0x14] (** PUSH 20 bytes (should be hash of pubkey for alpha) onto the stack **)
+  @ be160_bytelist alpha
+  @ [0x67; (** OP_ELSE **)
+     0x04] (** PUSH 4 bytes onto the stack (lock time) **)
+  @ blnum_le (big_int_of_int32 tmlock) 4
+  @ [if rel then 0xb2 else 0xb1] (** CSV or CLTV to check if this branch is valid yet **)
+  @ [0x75; (** OP_DROP, drop the locktime from the stack **)
+     0x76; (** OP_DUP -- duplicate the given pubkey for beta **)
+     0xa9; (** OP_HASH160 -- hash the given pubkey **)
+     0x14] (** PUSH 20 bytes (should be hash of pubkey for beta) onto the stack **)
+  @ be160_bytelist beta
+  @ [0x68; (** OP_ENDIF **)
+     0x88; (** OP_EQUALVERIFY -- to ensure the given pubkey hashes to the right value **)
+     0xac] (** OP_CHECKSIG **)
+  in
+  let alpha = Script.hash160_bytelist scrl in
+  (alpha,scrl)
+
 let createmultisig2 m pubkeys =
   let n = List.length pubkeys in
   if n <= 1 || n > 16 then raise (Failure "n must be > 1 and <= 16");
@@ -3911,6 +4157,41 @@ let createmultisig m jpks =
       let pubkeys = List.map (fun j -> match j with JsonStr(s) -> (s,hexstring_pubkey s) | _ -> raise (Failure "expected an array of pubkeys")) jpkl in
       createmultisig2 m pubkeys
   | _ -> raise (Failure "expected an array of pubkeys")
+
+let extract_secret_from_btctx h vout txstr : hashval =
+  let vout32 = Int32.of_int vout in
+  let l = String.length txstr in
+  if l <= 4 then raise (Failure "btc tx is impossibly short");
+  let start = if Char.code txstr.[4] = 0 then 6 else 4 in
+  let (numins,c) = sei_varint seis (txstr,l,None,start,0) in
+  let startins =
+    match c with
+    | (_,_,_,i,_) -> i
+  in
+  let numins = Int64.to_int numins in
+  let rec extract_secret i j =
+    if i < l && j < numins then
+      let (k,c) = sei_hashval seis (txstr,l,None,i,0) in
+      let (v,c) = sei_int32 seis c in
+      let k = hashval_rev k in
+      let v = int32_rev v in
+      let (sgsize,c) = sei_varint seis c in
+      let sgsize = Int64.to_int sgsize in
+      match c with
+      | (_,_,_,i,_) -> 
+         if k = h && v = vout32 then
+           begin
+             let by1 = Char.code txstr.[i] in
+             let by2 = Char.code txstr.[i + 1 + by1] in
+             let (secr,_) = sei_hashval seis (txstr,l,None,i+3+by1+by2,0) in
+             secr
+           end
+         else
+           extract_secret (i+sgsize+4) (j+1)
+    else
+      raise (Failure "could not extract secret")
+  in
+  extract_secret startins 0
 
 let report_recenttxs_filtered p oc h n =
   let reptxs = ref [] in

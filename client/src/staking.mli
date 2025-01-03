@@ -26,4 +26,8 @@ val compute_genesis_staking_chances : int64 -> int64 -> unit
 
 val stakingthread : unit -> unit
 
+exception StakingPauseMsg of float * string
+exception StakingPause of float
+exception StakingProblemPause
+exception StakingPublishBlockPause
 

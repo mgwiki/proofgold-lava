@@ -1,4 +1,5 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
+(* Copyright (c) 2022 The Proofgold Love developers *)
 (* Copyright (c) 2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015-2016 The Qeditas developers *)
@@ -88,31 +89,31 @@ let missingdeltash : (hashval, unit) Hashtbl.t = Hashtbl.create 20000
 let missingheaders = ref [];;
 let missingdeltas = ref [];;
 
-let add_missing_header hght h =
+let add_missing_header hght h lbt =
   if not (Hashtbl.mem missingheadersh h) then
     begin
       Hashtbl.add missingheadersh h ();
-      missingheaders := List.merge (fun (i,_) (j,_) -> compare i j) [(hght,h)] !missingheaders;
+      missingheaders := List.merge (fun (i,_,_) (j,_,_) -> compare i j) [(hght,h,lbt)] !missingheaders;
     end
 
-let add_missing_delta hght h =
+let add_missing_delta hght h lbt =
   if not (Hashtbl.mem missingdeltash h) then
     begin
       Hashtbl.add missingdeltash h ();
-      missingdeltas := List.merge (fun (i,_) (j,_) -> compare i j) [(hght,h)] !missingdeltas;
+      missingdeltas := List.merge (fun (i,_,_) (j,_,_) -> compare i j) [(hght,h,lbt)] !missingdeltas;
     end
 
 let rem_missing_header h =
   Hashtbl.remove missingheadersh h;
   match !missingheaders with
-  | (_,k)::rl when h = k -> missingheaders := rl
-  | _ -> missingheaders := List.filter (fun (_,k) -> not (h = k)) !missingheaders
+  | (_,k,_)::rl when h = k -> missingheaders := rl
+  | _ -> missingheaders := List.filter (fun (_,k,_) -> not (h = k)) !missingheaders
     
 let rem_missing_delta h =
   Hashtbl.remove missingdeltash h;
   match !missingdeltas with
-  | (_,k)::rl when h = k -> missingdeltas := rl
-  | _ -> missingdeltas := List.filter (fun (_,k) -> not (h = k)) !missingdeltas
+  | (_,k,_)::rl when h = k -> missingdeltas := rl
+  | _ -> missingdeltas := List.filter (fun (_,k,_) -> not (h = k)) !missingdeltas
 
 let netblkh : int64 ref = ref 0L
 
@@ -739,7 +740,7 @@ let find_and_send_requestmissingblocks cs =
 	while (!j < 255 && not (!mhl = [])) do
 	  match !mhl with
 	  | [] -> raise Exit (*** impossible ***)
-	  | (blkh,h)::mhr ->
+	  | (blkh,h,_)::mhr ->
 	      mhl := mhr;
 	      if (((blkh >= cs.first_header_height) && (blkh <= cs.last_height)) || Hashtbl.mem cs.rinv (ii,h)) && not (recently_requested (i,h) tm cs.invreq) then
 		begin
@@ -760,29 +761,29 @@ let find_and_send_requestmissingblocks cs =
 	    let _ (* mh *) = queue_msg cs GetHeaders ms in
 	    ()
 	  end;
-        List.iter
-          (fun (blkh,h) ->
-            if (((blkh >= cs.first_full_height) && (blkh <= cs.last_height)) || Hashtbl.mem cs.rinv (dii,h)) && not (recently_requested (di,h) tm cs.invreq) then
-              begin
-		let msb = Buffer.create 100 in
-		seosbf (seo_hashval seosb h (msb,None));
-		let ms = Buffer.contents msb in
-		Hashtbl.replace cs.invreq (di,h) tm;
-		ignore (queue_msg cs GetBlockdelta ms)
-              end
-          )
+	List.iter
+          (fun (blkh,h,lbt) ->
+            let f () =
+	      if (((blkh >= cs.first_full_height) && (blkh <= cs.last_height)) || Hashtbl.mem cs.rinv (dii,h)) && not (recently_requested (di,h) tm cs.invreq) then
+	        begin
+		  let msb = Buffer.create 100 in
+		  seosbf (seo_hashval seosb h (msb,None));
+		  let ms = Buffer.contents msb in
+		  Hashtbl.replace cs.invreq (di,h) tm;
+		  ignore (queue_msg cs GetBlockdelta ms)
+	        end
+            in
+            try
+              match lbt with
+              | None -> f()
+              | Some(lbt) ->
+                 let (_,_,_,_,par,_,_) = Db_outlinevals.dbget lbt in
+                 match par with
+                 | None -> f ()
+                 | Some(prlb,prlt) ->
+                    if Db_validblockvals.dbget (hashpair prlb prlt) then f ()
+            with _ -> ())
           !missingdeltas;
-(*	match !missingdeltas with
-	| ((blkh,h)::_) ->
-	    if (((blkh >= cs.first_full_height) && (blkh <= cs.last_height)) || Hashtbl.mem cs.rinv (dii,h)) && not (recently_requested (di,h) tm cs.invreq) then
-	      begin
-		let msb = Buffer.create 100 in
-		seosbf (seo_hashval seosb h (msb,None));
-		let ms = Buffer.contents msb in
-		Hashtbl.replace cs.invreq (di,h) tm;
-		ignore (queue_msg cs GetBlockdelta ms)
-	      end
-	| _ -> () *)
       end;;
 
 let send_addrs yesterday cs =

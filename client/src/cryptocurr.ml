@@ -1,4 +1,4 @@
-(* Copyright (c) 2021-2024 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015 The Qeditas developers *)
 (* Copyright (c) 2017-2019 The Dalilcoin developers *)
@@ -118,6 +118,21 @@ let pfgwif k compr =
   ignore (seosb_hashval (big_int_hashval k) (s,None));
   let (sh20,_,_,_,_,_,_,_) = Be256.to_int32p8 (sha256dstr (Buffer.contents s)) in
   base58 (or_big_int (shift_left_big_int (or_big_int k (shift_left_big_int (big_int_of_int pre) 256)) 32) (int32_big_int_bits sh20 0))
+
+let btcwif k compr =
+  let pre = if !Config.testnet then 0xef else 0x80 in
+  let k1 = 
+    if compr then
+      or_big_int unit_big_int (shift_left_big_int (or_big_int (shift_left_big_int (big_int_of_int pre) 256) k) 8)
+    else
+      or_big_int (shift_left_big_int (big_int_of_int pre) 256) k
+  in
+  let s = Buffer.create 34 in
+  Buffer.add_char s (Char.chr pre);
+  ignore (seosb_hashval (big_int_hashval k) (s,None));
+  if compr then Buffer.add_char s (Char.chr 1);
+  let (sh20,_,_,_,_,_,_,_) = Be256.to_int32p8 (sha256dstr (Buffer.contents s)) in
+  base58 (or_big_int (shift_left_big_int k1 32) (int32_big_int_bits sh20 0))
 
 (* WIFs for litecoin private keys use a different prefix byte depending on the network (testnet or mainnet) *)
 let ltcwif k compr =
@@ -307,6 +322,19 @@ let btcaddrstr_addr b =
   else
     raise (Failure "Not a Bitcoin address")
 
+(* Convert a litecoin base58 address string to a 20-byte big-endian integer and a prefix byte *)
+let ltcaddrstr_addr b =
+  let (_,p,x0,x1,x2,x3,x4,cksm) = hashval_int32p8 (big_int_hashval (frombase58 b)) in
+  let xs = Be160.of_int32p5 (x0,x1,x2,x3,x4) in
+  if not (cksm = calc_checksum (Int32.to_int p) xs) then raise (Failure "Not a valid Litecoin address (checksum incorrect)");
+  Printf.printf "p = %ld\n" p;
+  if p = 48l then
+    (0,xs)
+  else if p = 50l then
+    (1,xs)
+  else
+    raise (Failure "Not a Litecoin address")
+
 (* Convert a 20-byte big-endian integer to a bitcoin base58 address string *)
 let be160_btcaddrstr rm1 =
   let (rm10,rm11,rm12,rm13,rm14) = (Be160.to_int32p5 rm1) in
@@ -317,6 +345,27 @@ let be160_btcaddrstr rm1 =
   let (sh30,_,_,_,_,_,_,_) = Be256.to_int32p8 (sha256dstr (Buffer.contents s)) in
   let a = int32p8_big_int (0l,0l,rm10,rm11,rm12,rm13,rm14,sh30) in
   ((String.make (c0+1) '1') ^ (base58 a))
+
+let payaddr_btcaddrstr (b,rm1) =
+  if b then
+    let (rm10,rm11,rm12,rm13,rm14) = (Be160.to_int32p5 rm1) in
+    let s = Buffer.create 21 in
+    Buffer.add_char s '\005';
+    ignore (seosb_be160 rm1 (s,None));
+    let (sh30,_,_,_,_,_,_,_) = Be256.to_int32p8 (sha256dstr (Buffer.contents s)) in
+    let a = int32p8_big_int (0l,5l,rm10,rm11,rm12,rm13,rm14,sh30) in
+    base58 a
+  else
+    be160_btcaddrstr rm1
+
+let payaddr_ltcaddrstr (b,rm1) =
+  let (rm10,rm11,rm12,rm13,rm14) = (Be160.to_int32p5 rm1) in
+  let s = Buffer.create 21 in
+  Buffer.add_char s (if b then '\050' else '\048');
+  ignore (seosb_be160 rm1 (s,None));
+  let (sh30,_,_,_,_,_,_,_) = Be256.to_int32p8 (sha256dstr (Buffer.contents s)) in
+  let a = int32p8_big_int (0l,(if b then 50l else 48l),rm10,rm11,rm12,rm13,rm14,sh30) in
+  base58 a
 
 (* Convert a prefix byte and a 20-byte big-endian integer to a base58 address string *)
 let hashval_gen_addrstr pre rm1 =

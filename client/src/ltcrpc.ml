@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
 (* Copyright (c) 2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2017-2019 The Dalilcoin developers *)
@@ -83,7 +83,7 @@ let ltcrpc_connect () =
            let _ (* ip1 *) = input_byte sin in
            let _ (* ip2 *) = input_byte sin in
            let _ (* ip3 *) = input_byte sin in
-           Printf.fprintf sout "POST / HTTP/1.1\n";
+           Printf.fprintf sout "POST /%s HTTP/1.1\n" (match !Config.ltcwallet with None -> "" | Some(w) -> Printf.sprintf "wallet/%s" w);
            Printf.fprintf sout "Host: %s:%d\n" onionaddr rport;
            Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth());
            Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
@@ -107,7 +107,7 @@ let ltcrpc_connect () =
        let sout = Unix.out_channel_of_descr s in
        set_binary_mode_in sin true;
        set_binary_mode_out sout true;
-       Printf.fprintf sout "POST / HTTP/1.1\n";
+       Printf.fprintf sout "POST /%s HTTP/1.1\n" (match !Config.ltcwallet with None -> "" | Some(w) -> Printf.sprintf "wallet/%s" w);
        Printf.fprintf sout "Host: %s:%d\n" !Config.ltcrpcip !Config.ltcrpcport;
        Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth());
        Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
@@ -161,7 +161,7 @@ let ltcrpc2_connect () =
            let _ (* ip1 *) = input_byte sin in
            let _ (* ip2 *) = input_byte sin in
            let _ (* ip3 *) = input_byte sin in
-           Printf.fprintf sout "POST / HTTP/1.1\n";
+           Printf.fprintf sout "POST /%s HTTP/1.1\n" (match !Config.ltcwallet with None -> "" | Some(w) -> Printf.sprintf "wallet/%s" w);
            Printf.fprintf sout "Host: %s:%d\n" onionaddr rport;
            Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth2());
            Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
@@ -185,7 +185,7 @@ let ltcrpc2_connect () =
        let sout = Unix.out_channel_of_descr s in
        set_binary_mode_in sin true;
        set_binary_mode_out sout true;
-       Printf.fprintf sout "POST / HTTP/1.1\n";
+       Printf.fprintf sout "POST /%s HTTP/1.1\n" (match !Config.ltcwallet2 with None -> "" | Some(w) -> Printf.sprintf "wallet/%s" w);
        Printf.fprintf sout "Host: %s:%d\n" !Config.ltcrpcip2 !Config.ltcrpcport2;
        Printf.fprintf sout "Authorization: Basic %s\n" (ltcrpcauth2());
        Printf.fprintf sout "User-Agent: Proofgold/0.2.8\n";
@@ -1258,6 +1258,69 @@ let ltc_getburntransactioninfo h =
     end
   with JsonParseFail(_,_) -> raise NotAnLtcBurnTx
 
+let ltc_getburntransactioninfo2 h =
+  let l =
+    if !Config.ltcoffline then
+      begin
+	Printf.printf "call getrawtransaction %s in ltc\n>> " h; flush stdout;
+	read_line()
+      end
+    else
+      let call = "{\"jsonrpc\": \"1.0\", \"id\":\"grtx\", \"method\": \"getrawtransaction\", \"params\": [\"" ^ h ^ "\",1] }" in
+      begin
+        try
+          if !Config.ltcrpcavoidcurl then
+              begin
+                let (s,sin,sout) = ltcrpc_connect () in
+                Printf.fprintf sout "Content-Length: %d\n\n" (String.length call);
+                Printf.fprintf sout "%s\n" call;
+                flush sout;
+                skip_to_blankline sin;
+                let l = input_line sin in
+                shutdown_close s;
+                l
+              end
+          else
+            raise Exit
+        with Exit -> (* fall back on curl *)
+          let userpass = !Config.ltcrpcuser ^ ":" ^ !Config.ltcrpcpass in
+          let url = ltcrpc_url() in
+          let fullcall = !Config.curl ^ " --user " ^ userpass ^ " --data-binary '" ^ call ^ "' -H 'content-type: text/plain;' " ^ url in
+          let (inc,outc,errc) = Unix.open_process_full fullcall [| |] in
+          let l = input_line inc in
+          ignore (Unix.close_process_full (inc,outc,errc));
+          l
+      end
+  in
+  try
+    begin
+      match parse_jsonval l with
+      | (JsonObj(al),_) ->
+         begin
+	   match List.assoc "result" al with
+	   | JsonObj(bl) ->
+	      begin
+	        match List.assoc "vout" bl with
+	        | JsonArr(_::JsonObj(vout2)::_) ->
+		   begin
+		     match List.assoc "scriptPubKey" vout2 with
+		     | JsonObj(cl) ->
+		        let addrs = List.assoc "addresses" cl in
+                        begin
+                          match addrs with
+                          | JsonArr([JsonStr(alpha)]) -> Some alpha
+                          | _ -> None
+                        end
+		     | _ -> None
+		   end
+	        | _ -> None
+	      end
+	   | _ -> None
+         end
+      | _ -> None
+    end
+  with JsonParseFail(_,_) -> None
+
 module DbLtcBurnTx = Dbmbasic (struct type t = int64 * hashval * hashval * hashval * int32 let basedir = "ltcburntx" let seival = sei_prod5 sei_int64 sei_hashval sei_hashval sei_hashval sei_int32 seis let seoval = seo_prod5 seo_int64 seo_hashval seo_hashval seo_hashval seo_int32 seosb end)
 
 module DbLtcBlock = Dbmbasic (struct type t = hashval * int64 * int64 * hashval list let basedir = "ltcblock" let seival = sei_prod4 sei_hashval sei_int64 sei_int64 (sei_list sei_hashval) seis let seoval = seo_prod4 seo_hashval seo_int64 seo_int64 (seo_list seo_hashval) seosb end)
@@ -1288,12 +1351,13 @@ let rec ltc_process_block h =
 		  (Utils.log_string (Printf.sprintf "Adding burn %s for genesis header %s\n" txh (hashval_hexstring dnxt)));
 		  txhhs := txhh :: !txhhs;
 		  genl := (txhh,burned,dnxt)::!genl;
+                  let lblktx = hashpair hh txhh in
 		  if not (Db_outlinevals.dbexists (hashpair hh txhh)) then
 		    begin
 		      Db_outlinevals.dbput (hashpair hh txhh) (dnxt,tm,burned,(txid1,vout1),None,hashpair hh txhh,1L);
 		      (*** since the burn is presumably new, add to missing lists; this should never happen since the genesis phase has passed. ***)
-		      missingheaders := List.merge (fun (i,_) (j,_) -> compare i j) [(1L,dnxt)] !missingheaders;
-		      missingdeltas := List.merge (fun (i,_) (j,_) -> compare i j) [(1L,dnxt)] !missingdeltas;
+		      missingheaders := List.merge (fun (i,_,_) (j,_,_) -> compare i j) [(1L,dnxt,Some(lblktx))] !missingheaders;
+		      missingdeltas := List.merge (fun (i,_,_) (j,_,_) -> compare i j) [(1L,dnxt,Some(lblktx))] !missingdeltas;
 		      begin
 			try
 			  Hashtbl.find unburned_headers dnxt (hh,txhh);
@@ -1323,12 +1387,22 @@ let rec ltc_process_block h =
 			  match lprevblkh with
 			  | Some(lprevblkh) ->
 			      let lprevblkh = hexstring_hashval lprevblkh in
-			      let (_,_,_,_,_,_,dhght) = Db_outlinevals.dbget (hashpair lprevblkh lprevtx) in
+			      let (dprevprev,_,_,_,_,_,dhght) = Db_outlinevals.dbget (hashpair lprevblkh lprevtx) in
 			      let currhght = Int64.add 1L dhght in
 			      Db_outlinevals.dbput (hashpair hh txhh) (dnxt,tm,burned,(txid1,vout1),Some(lprevblkh,lprevtx),hashpair hh txhh,currhght);
+                              begin (** check if it's building on a block we've thrown out **)
+                                if DbBlacklist.dbexists dprevprev then
+                                  DbBlacklist.dbput dprev true;
+                                if DbInvalidatedBlocks.dbexists dprevprev then
+                                  DbInvalidatedBlocks.dbput dprev true;
+                              end;
 			      (*** since the burn is presumably new, add to missing lists (unless it was staked by the current node which is handled in staking module) ***)
-			      missingheaders := List.merge (fun (i,_) (j,_) -> compare i j) [(currhght,dnxt)] !missingheaders;
-			      missingdeltas := List.merge (fun (i,_) (j,_) -> compare i j) [(currhght,dnxt)] !missingdeltas;
+                                if not (DbBlacklist.dbexists dprev || DbInvalidatedBlocks.dbexists dprev) then (** unless it's being thrown out in advance, put it on the missing lists **)
+                                begin
+                                  let lblktx = hashpair hh txhh in
+			          missingheaders := List.merge (fun (i,_,_) (j,_,_) -> compare i j) [(currhght,dnxt,Some(lblktx))] !missingheaders;
+			          missingdeltas := List.merge (fun (i,_,_) (j,_,_) -> compare i j) [(currhght,dnxt,Some(lblktx))] !missingdeltas;
+                                end;
 			      begin
 				try
 				  Hashtbl.find unburned_headers dnxt (hh,txhh);

@@ -1,3 +1,4 @@
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015 The Qeditas developers *)
 (* Copyright (c) 2017-2018 The Dalilcoin developers *)
@@ -30,11 +31,13 @@ val ltcrpconion : string option ref
 val ltcrpcport : int ref
 val ltcrpcuser : string ref
 val ltcrpcpass : string ref
+val ltcwallet : string option ref
 val ltcrpcip2 : string ref
 val ltcrpconion2 : string option ref
 val ltcrpcport2 : int ref
 val ltcrpcuser2 : string ref
 val ltcrpcpass2 : string ref
+val ltcwallet2 : string option ref
 val ltcaddresses : string list ref
 val ltctradeaddresses : string list ref
 val curl : string ref
@@ -70,3 +73,4 @@ val min_conns_pow : int ref
 val min_conn_pow_target : int32 ref
 val max_conn_pow_tries : int ref
 val explorer : bool ref
+val waitforblock : int ref

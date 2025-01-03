@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015 The Qeditas developers *)
 (* Copyright (c) 2017-2019 The Dalilcoin developers *)
@@ -14,6 +14,7 @@ open Hash
 val base58 : Z.t -> string
 val frombase58 : string -> Z.t
 val pfgwif : Z.t -> bool -> string
+val btcwif : Z.t -> bool -> string
 val ltcwif : Z.t -> bool -> string
 val privkey_from_wif : string -> Z.t * bool
 val privkey_from_btcwif : string -> Z.t * bool
@@ -24,9 +25,12 @@ val pubkey_hashval : Z.t * Z.t -> bool -> hashval
 val pubkey_be160 : Z.t * Z.t -> bool -> Be160.t
 val be160_from_addrstr : string -> Be160.t
 val be160_btcaddrstr : Be160.t -> string
+val payaddr_btcaddrstr : payaddr -> string
+val payaddr_ltcaddrstr : payaddr -> string
 val addr_pfgaddrstr : addr -> string
 val pfgaddrstr_addr : string -> addr
 val btcaddrstr_addr : string -> addr
+val ltcaddrstr_addr : string -> addr
 val bars_of_atoms : int64 -> string
 val atoms_of_bars : string -> int64
 val ltc_of_litoshis : int64 -> string
