@@ -151,8 +151,8 @@ val strip_location_left0 : location list -> location list
 val ctree_lookup_addr_assets : bool -> bool -> ctree -> location -> hlist
 
 val ctree_lookup_input_assets : bool -> bool -> bool -> addr_assetid list -> ctree -> (addr -> hashval -> unit) -> (addr * asset) list
-val ctree_supports_tx : int ref -> bool -> bool -> bool -> ttree option -> stree option -> int64 -> tx -> ctree -> int64
-val ctree_supports_tx_2 : int ref -> bool -> bool -> bool -> ttree option -> stree option -> int64 -> tx -> (addr * asset) list -> asset list -> ctree -> int64
+val ctree_supports_tx : int ref -> bool -> bool -> bool -> ttree option -> stree option -> int64 -> hashval list -> tx -> ctree -> int64
+val ctree_supports_tx_2 : int ref -> bool -> bool -> bool -> ttree option -> stree option -> int64 -> hashval list -> tx -> (addr * asset) list -> asset list -> ctree -> int64
 
 exception MaxAssetsAtAddress
 

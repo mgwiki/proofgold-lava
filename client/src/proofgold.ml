@@ -1,4 +1,5 @@
-(* Copyright (c) 2021-2023 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
+(* Copyright (c) 2022 The Proofgold Love developers *)
 (* Copyright (c) 2020-2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015-2017 The Qeditas developers *)
@@ -171,11 +172,11 @@ let ltc_listener () =
         begin
           missingheaders :=
             List.filter
-              (fun (_,k) -> not (DbBlockHeader.dbexists k || DbInvalidatedBlocks.dbexists k || DbBlacklist.dbexists k))
+              (fun (_,k,_) -> not (DbBlockHeader.dbexists k || DbInvalidatedBlocks.dbexists k || DbBlacklist.dbexists k))
               !missingheaders;
           missingdeltas :=
             List.filter
-              (fun (_,k) -> not (DbBlockDelta.dbexists k || DbInvalidatedBlocks.dbexists k || DbBlacklist.dbexists k))
+              (fun (_,k,_) -> not (DbBlockDelta.dbexists k || DbInvalidatedBlocks.dbexists k || DbBlacklist.dbexists k))
               !missingdeltas;
           if !missingheaders = [] && !missingdeltas = [] then
             (maybe_ensure_sync(); Thread.delay 60.0)
@@ -1015,19 +1016,103 @@ let resend_txpool oc =
        (fun (k,stau) ->
          try
            let sz = stxsize stau in
-           Commands.validatetx2 oc (Int64.add 1L blkh) tm tr sr lr sz stau;
+           Commands.validatetx2 None (Int64.add 1L blkh) tm tr sr lr sz stau;
            if !cnt < 65536 then
              (txinv := (int_of_msgtype STx,k)::!txinv; incr cnt)
          with exn ->
-           Printf.fprintf oc "Removing %s\n" (hashval_hexstring k);
-               Hashtbl.remove stxpool k)
-           !tmp;
-         broadcast_inv !txinv
+           Utils.log_string (Printf.sprintf "Removing %s\n" (hashval_hexstring k));
+           Hashtbl.remove stxpool k)
+       !tmp;
+     broadcast_inv !txinv
 
 let initialize_commands () =
   ac "version" "version" "Print client description and version number"
     (fun oc _ ->
       Printf.fprintf oc "%s %s\n" Version.clientdescr Version.clientversion);
+  ac "sleep" "sleep <seconds>" "Sleep for given number of seconds"
+    (fun oc al ->
+      match al with
+      | [m] -> Thread.delay (float_of_string m)
+      | _ -> raise BadCommandForm);
+  ac "decodeheader" "decodeheader <hex>" "decode header given in hex into json"
+    (fun oc al ->
+      match al with
+      | [h] ->
+         let hs = hexstring_string h in
+         let (bh,_) = sei_blockheader seis (hs,String.length hs,None,0,0) in
+         let (bhd,bhs) = bh in
+	 let pbh = bhd.prevblockhash in
+	 let alpha = bhd.stakeaddr in
+	 let aid = bhd.stakeassetid in
+	 let timestamp = bhd.timestamp in
+	 let deltatime = bhd.deltatime in
+	 let tinfo = bhd.tinfo in
+	 let bblkh =
+	   try
+	     match pbh with
+	     | Some(_,Poburn(plbk,pltx,_,_,_,_)) ->
+		let (_,_,_,_,_,_,pblkh) = Db_outlinevals.dbget (hashpair plbk pltx) in
+		Some(Int64.add pblkh 1L)
+	     | None -> Some(1L)
+	   with Not_found ->
+	     None
+	 in
+	 let jpb =
+	   match pbh with
+	   | None -> []
+	   | Some(prevh,Poburn(lblkh,ltxh,lmedtm,burned,txid1,vout1)) ->
+	      match bblkh with
+	      | Some(bblkh) ->
+		 [("height",JsonNum(Int64.to_string bblkh));
+		  ("prevblock",
+		   JsonObj([("block",JsonStr(hashval_hexstring prevh));
+			    ("ltcblock",JsonStr(hashval_hexstring lblkh));
+			    ("ltcburntx",JsonStr(hashval_hexstring ltxh));
+			    ("ltcmedtm",JsonNum(Int64.to_string lmedtm));
+			    ("ltcburned",JsonNum(Int64.to_string burned));
+                            ("txid1",JsonStr(hashval_hexstring txid1));
+                            ("vout1",JsonNum(Int32.to_string vout1))]))]
+	      | None ->
+		 [("prevblock",
+		   JsonObj([("block",JsonStr(hashval_hexstring prevh));
+			    ("ltcblock",JsonStr(hashval_hexstring lblkh));
+			    ("ltcburntx",JsonStr(hashval_hexstring ltxh));
+			    ("ltcmedtm",JsonNum(Int64.to_string lmedtm));
+			    ("ltcburned",JsonNum(Int64.to_string burned));
+                            ("txid1",JsonStr(hashval_hexstring txid1));
+                            ("vout1",JsonNum(Int32.to_string vout1))]))]
+	 in
+	 let jr =
+	   jpb @
+	     [("stakeaddress",JsonStr(addr_pfgaddrstr (p2pkhaddr_addr alpha)));
+	      ("stakeassetid",JsonStr(hashval_hexstring aid));
+	      ("timestamp",JsonNum(Int64.to_string timestamp));
+	      ("deltatime",JsonNum(Int32.to_string deltatime));
+	      ("prevledgerroot",JsonStr(hashval_hexstring (ctree_hashroot bhd.prevledger)));
+	      ("newledgerroot",JsonStr(hashval_hexstring bhd.newledgerroot));
+	      ("target",JsonStr(string_of_big_int tinfo));
+	      ("difficulty",JsonStr(string_of_big_int (difficulty tinfo)))]
+	 in
+         let jr =
+           match bhd.pureburn with
+           | Some(h,v) -> ("pureburn",JsonObj([("txid1",JsonStr(hashval_hexstring h));("vout1",JsonNum(Int32.to_string v))]))::jr
+           | None -> jr
+         in
+	 let jr =
+	   match bhd.newtheoryroot with
+	   | Some(r) -> ("newtheoryroot",JsonStr(hashval_hexstring r))::jr
+	   | None -> jr
+	 in
+	 let jr =
+	   match bhd.newsignaroot with
+	   | Some(r) -> ("newsignaroot",JsonStr(hashval_hexstring r))::jr
+	   | None -> jr
+	 in
+         let j = JsonObj(("type",JsonStr("header"))::jr) in
+         print_jsonval oc j;
+         Printf.fprintf oc "\n";
+         print_ctree oc bhd.prevledger
+      | _ -> raise BadCommandForm);
   ac "retractltcblockandexit" "retractltcblockandexit <ltcblock>" "Purge ltc information back to the given block and exit.\nWhen Proofgold restarts it will resync with ltc back to the retracted block."
     (fun oc al ->
       match al with
@@ -2748,7 +2833,6 @@ let initialize_commands () =
 				      let al = ref [(markerid,bday,obl,Marker)] in
 				      let txinlr = ref [(beta,markerid)] in
 				      let txoutlr = ref [(delta,(None,DocPublication(gammap,nonce,th,dl)))] in
-                                      let revisituses = ref [] in
 				      let usesobjs = doc_uses_objs dl in
 				      let usesprops = doc_uses_props dl in
 				      let createsobjs = doc_creates_objs dl in
@@ -2759,8 +2843,8 @@ let initialize_commands () =
 				      List.iter
 					(fun (alpha,a,v) ->
 					  match a with
-					  | (_,_,_,RightsObj(h,_)) -> Hashtbl.add objrightsassets h (alpha,a)
-					  | (_,_,_,RightsProp(h,_)) -> Hashtbl.add proprightsassets h (alpha,a)
+					  | (_,_,_,RightsObj(h,cnt)) when cnt > 0L -> Hashtbl.add objrightsassets h (alpha,a)
+					  | (_,_,_,RightsProp(h,cnt)) when cnt > 0L -> Hashtbl.add proprightsassets h (alpha,a)
 					  | _ -> ())
 					(Commands.get_spendable_assets_in_ledger oc lr blkh);
 				      let oname h =
@@ -2781,18 +2865,35 @@ let initialize_commands () =
 					  let (beta,r) = local_lookup_obj_thy_owner lr remgvtpth oidthy alphathy in
 					  begin
 					    match r with
-					    | None -> raise (Failure (Printf.sprintf "No right to use theory object '%s' %s. It must be redefined." (oname oidpure) (hashval_hexstring oidthy)))
+					    | None ->
+                                               begin
+                                                 try
+                                                   let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find objrightsassets oidthy in
+                                                   match rghtspreast with
+                                                   | RightsObj(h,cnt) ->
+                                                      txinlr := (xi,rghtsaid)::!txinlr;
+                                                      if cnt > 0L then
+                                                        txoutlr := (xi,(obl,RightsObj(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                   | _ -> raise (Failure (Printf.sprintf "Problem with rights to use theory object '%s' %s." (oname oidpure) (hashval_hexstring oidthy)))
+                                                 with Not_found ->
+                                                   raise (Failure (Printf.sprintf "No right to use theory object '%s' %s. It must be redefined." (oname oidpure) (hashval_hexstring oidthy)))
+                                               end
 					    | Some(i) when i > 0L -> (*** look for owned rights; if not increase 'tospend' to buy the rights ***)
 					       begin
-                                                 revisituses := (false,oidthy,beta,i)::!revisituses;
-                                                 if Hashtbl.mem objrightsassets oidthy then
-                                                   begin
-                                                     try
-                                                       let i2 = Hashtbl.find addrh beta in
-                                                       if i > i2 then Hashtbl.replace addrh beta i
-                                                     with Not_found ->
-                                                       Hashtbl.add addrh beta i
-                                                   end
+                                                 try
+                                                   let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find objrightsassets oidthy in
+                                                   match rghtspreast with
+                                                   | RightsObj(h,cnt) ->
+                                                      txinlr := (xi,rghtsaid)::!txinlr;
+                                                      if cnt > 0L then
+                                                        txoutlr := (xi,(obl,RightsObj(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                   | _ -> raise Not_found
+                                                 with Not_found ->
+                                                   try
+                                                     let i2 = Hashtbl.find addrh beta in
+                                                     if i > i2 then Hashtbl.replace addrh beta i
+                                                   with Not_found ->
+                                                     Hashtbl.add addrh beta i
                                                end
 					    | _ -> ()
 					  end;
@@ -2802,18 +2903,35 @@ let initialize_commands () =
 					    | None -> raise (Failure (Printf.sprintf "** Somehow the theory object has an owner but the pure object %s (%s) did not. Invariant failure. **" (hashval_hexstring oidpure) (addr_pfgaddrstr alphapure)))
 					    | Some(beta,r) ->
 						match r with
-						| None -> raise (Failure (Printf.sprintf "No right to use pure object '%s' %s. It must be redefined." (oname oidpure) (hashval_hexstring oidpure)))
+						| None ->
+                                                   begin
+                                                     try
+                                                       let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find objrightsassets oidpure in
+                                                       match rghtspreast with
+                                                       | RightsObj(h,cnt) ->
+                                                          txinlr := (xi,rghtsaid)::!txinlr;
+                                                          if cnt > 0L then
+                                                            txoutlr := (xi,(obl,RightsObj(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                       | _ -> raise (Failure (Printf.sprintf "Problem with rights to use pure object '%s' %s." (oname oidpure) (hashval_hexstring oidpure)))
+                                                     with Not_found ->
+                                                       raise (Failure (Printf.sprintf "No right to use pure object '%s' %s. It must be redefined." (oname oidpure) (hashval_hexstring oidpure)))
+                                                   end
 						| Some(i) when i > 0L -> (*** look for owned rights; if not increase 'tospend' to buy the rights ***)
 					           begin
-                                                     revisituses := (false,oidpure,beta,i)::!revisituses;
-                                                     if Hashtbl.mem objrightsassets oidpure then
-                                                       begin
-                                                         try
-                                                           let i2 = Hashtbl.find addrh beta in
-                                                           if i > i2 then Hashtbl.replace addrh beta i
-                                                         with Not_found ->
-                                                           Hashtbl.add addrh beta i
-                                                       end
+                                                     try
+                                                       let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find objrightsassets oidpure in
+                                                       match rghtspreast with
+                                                       | RightsObj(h,cnt) ->
+                                                          txinlr := (xi,rghtsaid)::!txinlr;
+                                                          if cnt > 0L then
+                                                            txoutlr := (xi,(obl,RightsObj(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                       | _ -> raise Not_found
+                                                     with Not_found ->
+                                                       try
+                                                         let i2 = Hashtbl.find addrh beta in
+                                                         if i > i2 then Hashtbl.replace addrh beta i
+                                                       with Not_found ->
+                                                         Hashtbl.add addrh beta i
                                                    end
 						| _ -> ()
 					  end)
@@ -2826,18 +2944,35 @@ let initialize_commands () =
 					  let (beta,r) = local_lookup_prop_thy_owner lr remgvknth pidthy alphathy in
 					  begin
 					    match r with
-					    | None -> raise (Failure (Printf.sprintf "No right to use theory proposition '%s' %s. It must be reproven." (pname pidpure) (hashval_hexstring pidthy)))
+					    | None ->
+                                               begin
+                                                 try
+                                                   let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find proprightsassets pidthy in
+                                                   match rghtspreast with
+                                                   | RightsProp(h,cnt) ->
+                                                      txinlr := (xi,rghtsaid)::!txinlr;
+                                                      if cnt > 0L then
+                                                        txoutlr := (xi,(obl,RightsProp(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                   | _ -> raise (Failure (Printf.sprintf "Problem with rights to use theory proposition '%s' %s." (oname pidpure) (hashval_hexstring pidthy)))
+                                                 with Not_found ->
+                                                   raise (Failure (Printf.sprintf "No right to use theory proposition '%s' %s. It must be reproven." (pname pidpure) (hashval_hexstring pidthy)))
+                                               end
 					    | Some(i) when i > 0L -> (*** look for owned rights; if not increase 'tospend' to buy the rights ***)
 						begin
-                                                  revisituses := (true,pidthy,beta,i)::!revisituses;
-                                                  if Hashtbl.mem proprightsassets pidthy then
-                                                    begin
-						      try
-                                                        let i2 = Hashtbl.find addrh beta in
-                                                        if i > i2 then Hashtbl.replace addrh beta i
-                                                      with Not_found ->
-                                                        Hashtbl.add addrh beta i
-                                                    end
+                                                  try
+                                                    let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find proprightsassets pidthy in
+                                                    match rghtspreast with
+                                                    | RightsProp(h,cnt) ->
+                                                       txinlr := (xi,rghtsaid)::!txinlr;
+                                                       if cnt > 0L then
+                                                         txoutlr := (xi,(obl,RightsProp(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                    | _ -> raise (Failure (Printf.sprintf "Problem with rights to use theory proposition '%s' %s." (oname pidpure) (hashval_hexstring pidthy)))
+                                                  with Not_found ->
+						    try
+                                                      let i2 = Hashtbl.find addrh beta in
+                                                      if i > i2 then Hashtbl.replace addrh beta i
+                                                    with Not_found ->
+                                                      Hashtbl.add addrh beta i
 						end
 					    | _ -> ()
 					  end;
@@ -2847,18 +2982,35 @@ let initialize_commands () =
 					    | None -> raise (Failure (Printf.sprintf "** Somehow the theory proposition has an owner but the pure object %s (%s) did not. Invariant failure. **" (hashval_hexstring pidpure) (addr_pfgaddrstr alphapure)))
 					    | Some(beta,r) ->
 						match r with
-						| None -> raise (Failure (Printf.sprintf "No right to use pure proposition '%s' %s. It must be reproven." (pname pidpure) (hashval_hexstring pidpure)))
+						| None ->
+                                                   begin
+                                                     try
+                                                       let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find proprightsassets pidpure in
+                                                       match rghtspreast with
+                                                       | RightsProp(h,cnt) ->
+                                                          txinlr := (xi,rghtsaid)::!txinlr;
+                                                          if cnt > 0L then
+                                                            txoutlr := (xi,(obl,RightsProp(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                       | _ -> raise (Failure (Printf.sprintf "Problem with rights to use pure proposition '%s' %s." (oname pidpure) (hashval_hexstring pidpure)))
+                                                     with Not_found ->
+                                                       raise (Failure (Printf.sprintf "No right to use pure proposition '%s' %s. It must be reproven." (pname pidpure) (hashval_hexstring pidpure)))
+                                                   end
 						| Some(i) when i > 0L -> (*** look for owned rights; if not increase 'tospend' to buy the rights ***)
 						   begin
-                                                     revisituses := (true,pidpure,beta,i)::!revisituses;
-                                                     if Hashtbl.mem proprightsassets pidpure then
-                                                       begin
-						         try
-                                                           let i2 = Hashtbl.find addrh beta in
-                                                           if i > i2 then Hashtbl.replace addrh beta i
-                                                         with Not_found ->
-                                                           Hashtbl.add addrh beta i
-                                                       end
+                                                     try
+                                                       let (xi,(rghtsaid,_,obl,rghtspreast)) = Hashtbl.find proprightsassets pidpure in
+                                                       match rghtspreast with
+                                                       | RightsProp(h,cnt) ->
+                                                          txinlr := (xi,rghtsaid)::!txinlr;
+                                                          if cnt > 0L then
+                                                            txoutlr := (xi,(obl,RightsProp(h,Int64.sub cnt 1L)))::!txoutlr;
+                                                       | _ -> raise (Failure (Printf.sprintf "Problem with rights to use theory proposition '%s' %s." (oname pidpure) (hashval_hexstring pidpure)))
+                                                     with Not_found ->
+						       try
+                                                         let i2 = Hashtbl.find addrh beta in
+                                                         if i > i2 then Hashtbl.replace addrh beta i
+                                                       with Not_found ->
+                                                         Hashtbl.add addrh beta i
 						   end
 						| _ -> ()
 					  end)
@@ -2868,38 +3020,6 @@ let initialize_commands () =
                                           tospend := Int64.add !tospend m;
                                           txoutlr := (payaddr_addr beta,(None,Currency(m)))::!txoutlr)
                                         addrh;
-                                      List.iter
-                                        (fun (b1,h1,beta1,i1) ->
-                                          try
-                                            let i2 = Hashtbl.find addrh beta1 in
-                                            if i2 < i1 then raise Not_found;
-                                          with Not_found ->
-                                            try
-                                              let (alpha,a) = Hashtbl.find (if b1 then proprightsassets else objrightsassets) h1 in
-					      match a with
-					      | (aid,bday,obl,RightsObj(h,r)) when not b1 ->
-						 if r > 0L then
-						   begin
-						     al := a::!al;
-						     txinlr := (alpha,aid)::!txinlr;
-                                                     if r > 1L then txoutlr := (alpha,(obl,RightsObj(h,Int64.sub r 1L)))::!txoutlr;
-                                                   end
-                                                 else
-                                                   raise Not_found
-					      | (aid,bday,obl,RightsProp(h,r)) when b1 ->
-						 if r > 0L then
-						   begin
-						     al := a::!al;
-						     txinlr := (alpha,aid)::!txinlr;
-                                                     if r > 1L then txoutlr := (alpha,(obl,RightsProp(h,Int64.sub r 1L)))::!txoutlr;
-                                                   end
-                                                 else
-                                                   raise Not_found
-                                              | _ ->
-                                                 raise Not_found
-                                            with Not_found ->
-                                              raise (Failure (Printf.sprintf "Problem obtaining rights for %s" (hashval_hexstring h1))))
-                                        !revisituses;
 				      List.iter
 					(fun (h,k) ->
 					  let oidpure = h in
@@ -3114,11 +3234,11 @@ let initialize_commands () =
     (fun oc al ->
       Printf.fprintf oc "%d missing headers\n" (List.length !missingheaders);
       List.iter
-	(fun (i,h) -> Printf.fprintf oc "%Ld %s\n" i (hashval_hexstring h))
+	(fun (i,h,_) -> Printf.fprintf oc "%Ld %s\n" i (hashval_hexstring h))
 	!missingheaders;
       Printf.fprintf oc "%d missing deltas\n" (List.length !missingdeltas);
       List.iter
-	(fun (i,h) -> Printf.fprintf oc "%Ld %s\n" i (hashval_hexstring h))
+	(fun (i,h,_) -> Printf.fprintf oc "%Ld %s\n" i (hashval_hexstring h))
 	!missingdeltas;
       );
   ac "reportowned" "reportowned [<outputfile> [<ledgerroot>]]" "Give a report of all owned objects and propositions in the ledger tree."
@@ -4800,9 +4920,9 @@ let initialize_commands () =
   ac "missingblocks" "missingblocks" "Print info about headers and deltas the node is missing.\nTypically a delta is only listed as missing after the header has been received and validated."
     (fun oc al ->
       Printf.fprintf oc "%d missing headers.\n" (List.length !missingheaders);
-      List.iter (fun (h,k) -> Printf.fprintf oc "%Ld. %s\n" h (hashval_hexstring k)) !missingheaders;
+      List.iter (fun (h,k,_) -> Printf.fprintf oc "%Ld. %s\n" h (hashval_hexstring k)) !missingheaders;
       Printf.fprintf oc "%d missing deltas.\n" (List.length !missingdeltas);
-      List.iter (fun (h,k) -> Printf.fprintf oc "%Ld. %s\n" h (hashval_hexstring k)) !missingdeltas);
+      List.iter (fun (h,k,_) -> Printf.fprintf oc "%Ld. %s\n" h (hashval_hexstring k)) !missingdeltas);
   ac "getledgerroot" "getledgerroot" "Print the current ledger root."
     (fun oc al ->
       let lr = get_ledgerroot (get_bestblock_print_warnings oc) in
@@ -5154,6 +5274,14 @@ let initialize_commands () =
       | _ -> raise BadCommandForm);
   ac "btctopfgaddr" "btctopfgaddr <btcaddress> [<btcaddress>] .. [<btcaddress>]" "Print the proofgold addresses corresponding to the given btc addresses."
     (fun oc al -> List.iter (Commands.btctopfgaddr oc) al);
+  ac "ltctopfgaddr" "ltctopfgaddr <ltcaddress> [<ltcaddress>] .. [<ltcaddress>]" "Print the proofgold addresses corresponding to the given ltc addresses."
+    (fun oc al -> List.iter (Commands.ltctopfgaddr oc) al);
+  ac "pfgtobtcaddr" "pfgtobtcaddr <pfgaddress> [<pfgaddress>] .. [<pfgaddress>]" "Print the btc addresses corresponding to the given proofgold addresses."
+    (fun oc al -> List.iter (Commands.pfgtobtcaddr oc) al);
+  ac "pfgtobtcwif" "pfgtobtcwif <pfgWIF>" "Print the btc private key WIF for the pfg private key WIF."
+    (fun oc al -> List.iter (Commands.pfgtobtcwif oc) al);
+  ac "pfgtoltcaddr" "pfgtobtcaddr <pfgaddress> [<pfgaddress>] .. [<pfgaddress>]" "Print the ltc addresses corresponding to the given proofgold addresses."
+    (fun oc al -> List.iter (Commands.pfgtoltcaddr oc) al);
   ac "printasset" "printasset <assethash>" "print information about the given asset"
     (fun oc al ->
       match al with
@@ -5421,19 +5549,320 @@ let initialize_commands () =
 	  Printf.fprintf oc "\nFund asset id 1: %s\n" (hashval_hexstring fundid1);
 	  Printf.fprintf oc "Fund asset id 2: %s\n" (hashval_hexstring fundid2)
 	end);
-  ac "createhtlc" "createhtlc <p2pkhaddr:alpha> <p2pkhaddr:beta> <timelock> [relative] [<secret>] [json]"
-    "Create hash timelock constract script and address.\nThe controller of address alpha can spend with the secret.\nThe controller of the address beta can spend after the timelock.\nThe controller of address alpha should call this command and the secret will be held in alpha's wallet.\nA hex 32 byte secret can optionally be given, otherwise one will be randomly generated.\nIf 'relative' is given, then relative lock time (CSV) is used. Otherwise absolute lock time (CLTV) is used.\nThe timelock is either in block time (if less than 500000000) or unix time (otherwise).\nOnly block time can be used with relative block time."
+  ac "createbtcswap" "createbtcswap <p2pkhaddr:alpha> <p2pkhaddr:beta> [<secret>]"
+    "Create hash timelock contract scripts for swapping btc and pfg.\nThe alpha address is for Alice (who is swapping btc for pfg) and\n the beta address is for Bob (who is swapping pfg for btc).\nBob is the one who calls this command since it generates the secret.\nThe addresses are given in pfg format (see command btctopfgaddr) and the private keys\nNote: This same commands should work for swapping with bch instead of btc.\n"
+    (fun oc al ->
+      let (palphastr,pbetastr,secr) =
+        match al with
+        | [palphastr;pbetastr] ->
+           let secr = big_int_hashval (strong_rand_256()) in
+           (palphastr,pbetastr,secr)
+        | [palphastr;pbetastr;secr] ->
+           (palphastr,pbetastr,hexstring_hashval secr)
+        | _ -> raise BadCommandForm
+      in
+      let palpha = pfgaddrstr_addr palphastr in
+      if not (p2pkhaddr_p palpha) then raise (Failure "proofgold addresses for swap must be p2pkh");
+      let pbeta = pfgaddrstr_addr pbetastr in
+      if not (p2pkhaddr_p pbeta) then raise (Failure "proofgold addresses for swap must be p2pkh");
+      let (_,av) = palpha in
+      let (_,bv) = pbeta in
+      let (pfggamma,pfgscrl,secrh) = Commands.createhtlc av bv 72l true secr in (* this is the htlc for proofgold: Alice and secret or Bob after 72 confirmations  *)
+      let (btcgamma,btcscrl,_) = Commands.createbtchtlc bv av 127 true secr in (* this is the htlc for bitcoin: Bob and secret or Alice after 127 confirmations  *)
+      Printf.fprintf oc "Pfg script: ";
+      List.iter (fun x -> Printf.fprintf oc "%02x" x) pfgscrl;
+      Printf.fprintf oc "\n";
+      Printf.fprintf oc "Pfg p2sh: %s\n" (addr_pfgaddrstr (p2shaddr_addr pfggamma));
+      Printf.fprintf oc "Btc script: ";
+      List.iter (fun x -> Printf.fprintf oc "%02x" x) btcscrl;
+      Printf.fprintf oc "\n";
+      Printf.fprintf oc "Btc p2sh: %s\n" (payaddr_btcaddrstr (p2shaddr_payaddr btcgamma));
+      Printf.fprintf oc "Secret: %s\n" (hashval_hexstring secr);
+      Printf.fprintf oc "Hash of secret: %s\n" (hashval_hexstring secrh));
+  ac "validatebtcswap" "validatebtcswap <p2pkhaddr:alpha> <p2pkhaddr:beta> <hashofsecret> <pfgp2shaddr> <btcp2shaddr>"
+    "Validate hash timelock contract script addresses for swapping btc and pfg.\nThe alpha address is for Alice (who is swapping btc for pfg) and\n the beta address is for Bob (who is swapping pfg for btc).\nBob is the one who calls this command since it generates the secret.\nThe addresses are given in pfg format (see command btctopfgaddr) and the private keys\nshould be in Alice and Bob's Proofgold wallet.\nNote: This same commands should work for swapping with bch instead of btc.\n"
+    (fun oc al ->
+      match al with
+      | [palphastr;pbetastr;secrh;pfggammastr;btcgammastr] ->
+	 begin
+           let secrethash = hexstring_hashval secrh in
+           let palpha = pfgaddrstr_addr palphastr in
+           if not (p2pkhaddr_p palpha) then raise (Failure "proofgold addresses for swap must be p2pkh");
+           let pbeta = pfgaddrstr_addr pbetastr in
+           if not (p2pkhaddr_p pbeta) then raise (Failure "proofgold addresses for swap must be p2pkh");
+           let pfggamma = pfgaddrstr_addr pfggammastr in
+           if not (p2shaddr_p pfggamma) then raise (Failure "proofgold contract address must be p2sh");
+           let btcgamma = btcaddrstr_addr btcgammastr in
+           if not (p2shaddr_p btcgamma) then raise (Failure "bitcoin contract address must be p2sh");
+           let (_,av) = palpha in
+           let (_,bv) = pbeta in
+           let (pfggamma2,pfgscrl,secrh) = Commands.createhtlc2 av bv 72l true secrethash in (* this is the htlc for proofgold: Alice and secret or Bob after 72 confirmations  *)
+           let (btcgamma2,btcscrl,_) = Commands.createbtchtlc2 bv av 127 true secrethash in (* this is the htlc for bitcoin: Bob and secret or Alice after 127 confirmations  *)
+           if (p2shaddr_addr pfggamma2) = pfggamma then
+             if (p2shaddr_addr btcgamma2) = btcgamma then
+               Printf.fprintf oc "Swap contract addresses validated. Everything looks correct.\n"
+             else
+               Printf.fprintf oc "Bitcoin p2sh contract address mismatch. Abandon swap.\n"
+           else
+             if (p2shaddr_addr btcgamma2) = btcgamma then
+               Printf.fprintf oc "Proofgold p2sh contract address mismatch. Abandon swap.\n"
+             else
+               Printf.fprintf oc "Bitcoin and Proofgold p2sh contract addresses mismatch. Abandon swap.\n"
+         end
+      | _ -> raise BadCommandForm);
+  ac "dumpprivkey" "dumpprivkey <p2pkhaddr>" "Show the private key for a p2pkhaddr if it is in the wallet"
+    (fun oc al ->
+      match al with
+      | [palphastr] ->
+         let palpha = pfgaddrstr_addr palphastr in
+         if not (p2pkhaddr_p palpha) then raise (Failure "Not a p2pkh address");
+         let (_,xv) = palpha in
+         let (ka,ba) = Commands.privkey_from_wallet xv in
+         Printf.fprintf oc "Private key: %s\n" (pfgwif ka ba)
+      | _ -> raise BadCommandForm);
+  ac "dumpbtcprivkey" "dumpbtcprivkey <p2pkhaddr>" "Show the private key in btc WIF format for a p2pkhaddr if it is in the wallet"
+    (fun oc al ->
+      match al with
+      | [palphastr] ->
+         let palpha = pfgaddrstr_addr palphastr in
+         if not (p2pkhaddr_p palpha) then raise (Failure "Not a p2pkh address");
+         let (_,xv) = palpha in
+         let (ka,ba) = Commands.privkey_from_wallet xv in
+         Printf.fprintf oc "Private key: %s\n" (btcwif ka ba)
+      | _ -> raise BadCommandForm);
+  ac "collectbtcswap" "collectbtcswap <p2pkhaddr:alpha> <p2pkhaddr:beta> <secret> <btctxid> <vout> <btcamount>" "collectbtcswap creates and signs a bitcoin utxo with an htlc p2sh address\narising from an atomic swap (see createbtcswap)"
+    (fun oc al ->
+      match al with
+      | [palphastr;pbetastr;secrstr;txidstr;voutstr;btcamt] ->
+         let palpha = pfgaddrstr_addr palphastr in
+         if not (p2pkhaddr_p palpha) then raise (Failure "proofgold addresses for swap must be p2pkh");
+         let pbeta = pfgaddrstr_addr pbetastr in
+         if not (p2pkhaddr_p pbeta) then raise (Failure "proofgold addresses for swap must be p2pkh");
+         let (_,av) = palpha in
+         let (_,bv) = pbeta in
+         let secr = hexstring_hashval secrstr in
+         let txid = hexstring_hashval txidstr in
+         let txidrh = hashval_rev txid in
+         let vout = Int32.of_string voutstr in
+         let satoshis = litoshis_of_ltc btcamt in
+         let (btcgamma2,btcscrl,secrh) = Commands.createbtchtlc bv av 127 true secr in (* this is the htlc for bitcoin: Bob and secret or Alice after 127 confirmations  *)
+         let txs1b = Buffer.create 200 in
+         Buffer.add_char txs1b '\002';
+         Buffer.add_char txs1b '\000';
+         Buffer.add_char txs1b '\000';
+         Buffer.add_char txs1b '\000';
+         Buffer.add_char txs1b '\001';
+         ignore (seo_hashval seosb txidrh (txs1b,None));
+         List.iter (fun z -> Buffer.add_char txs1b (Char.chr z)) (blnum32 vout);
+         let txs1 = Buffer.contents txs1b in
+         Buffer.clear txs1b;
+         Buffer.add_string txs1b "\255\255\255\253\001"; (* opt-in rbf *)
+         List.iter (fun z -> Buffer.add_char txs1b (Char.chr z)) (blnum64 satoshis);
+         Buffer.add_char txs1b (Char.chr 0x19);
+         Buffer.add_char txs1b (Char.chr 0x76);
+         Buffer.add_char txs1b (Char.chr 0xa9);
+         Buffer.add_char txs1b (Char.chr 0x14);
+         ignore (seo_be160 seosb bv (txs1b,None));
+         Buffer.add_char txs1b (Char.chr 0x88);
+         Buffer.add_char txs1b (Char.chr 0xac);
+         Buffer.add_string txs1b "\000\000\000\000"; (*** locktime ***)
+         let txs2 = Buffer.contents txs1b in
+         Buffer.clear txs1b;
+         Buffer.add_string txs1b "\001\000\000\000"; (*** SIGHASH_ALL ***)
+         let txs3 = Buffer.contents txs1b in
+         Buffer.clear txs1b;
+         List.iter (fun z -> Buffer.add_char txs1b (Char.chr z)) btcscrl;
+         let redscr = Buffer.contents txs1b in
+         let redscrlen = String.length redscr in
+         let presignedtx = Printf.sprintf "%s%c%s%s%s" txs1 (Char.chr redscrlen) redscr txs2 txs3 in
+         let presignedtxh = sha256dstr presignedtx in
+         let r = strong_rand_256() in
+         let ((kb,bb),pubkey) = Commands.privkey_and_pubkey_from_wallet bv in
+         let sg = signat_hashval presignedtxh kb r in
+         let (sgr,sgs) = sg in
+         let sgs = if Zarithint.gt_big_int sgs (Zarithint.shift_right_towards_zero_big_int Secp256k1._n 1) then Zarithint.sub_big_int Secp256k1._n sgs else sgs in
+         Buffer.clear txs1b;
+         Buffer.add_char txs1b (Char.chr 0x30);
+         if Zarithint.gt_big_int (Zarithint.shift_right_towards_zero_big_int sgr 255) Zarithint.zero_big_int then
+           begin
+             Buffer.add_char txs1b (Char.chr 0x45);
+             Buffer.add_char txs1b (Char.chr 0x02);
+             Buffer.add_char txs1b (Char.chr 0x21);
+             Buffer.add_char txs1b (Char.chr 0x00);
+           end
+         else
+           begin
+             Buffer.add_char txs1b (Char.chr 0x44);
+             Buffer.add_char txs1b (Char.chr 0x02);
+             Buffer.add_char txs1b (Char.chr 0x20);
+           end;
+         ignore (seo_hashval seosb (big_int_hashval sgr) (txs1b,None));
+         Buffer.add_char txs1b (Char.chr 0x02);
+         Buffer.add_char txs1b (Char.chr 0x20);
+         ignore (seo_hashval seosb (big_int_hashval sgs) (txs1b,None));
+         Buffer.add_char txs1b (Char.chr 0x01);
+         let dersg = Buffer.contents txs1b in
+         let pubkeyhex = pubkey_hexstring pubkey bb in
+         let pubkeybinstr = hexstring_string pubkeyhex in
+         let secrbinstr = hexstring_string secrstr in
+         let sgscr = Printf.sprintf "%c%s%c%s%c%s%c%c%c%s" (Char.chr (String.length dersg)) dersg (Char.chr (String.length pubkeybinstr)) pubkeybinstr (Char.chr 32) secrbinstr (Char.chr 0x51) (Char.chr 0x4c) (Char.chr redscrlen) redscr in
+         Printf.fprintf oc "Send this bitcoin tx to collect the btc swap while revealing the secret.\n";
+         Printf.fprintf oc "It can be sent using sendrawtransaction in Bitcoin Core or broadcast using some Bitcoin explorers.\n";
+         Printf.fprintf oc "%s%02x%s%s\n" (string_hexstring txs1) (String.length sgscr) (string_hexstring sgscr) (string_hexstring txs2)
+      | _ -> raise BadCommandForm);
+  ac "refundbtcswap" "refundbtcswap <p2pkhaddr:alpha> <p2pkhaddr:beta> <hashofsecret> <btctxid> <vout> <btcamount>" "refundbtcswap creates and signs a bitcoin utxo with an htlc p2sh address\narising from an expired atomic swap attempt (see createbtcswap)"
+    (fun oc al ->
+      match al with
+      | [palphastr;pbetastr;secrhstr;txidstr;voutstr;btcamt] ->
+         let palpha = pfgaddrstr_addr palphastr in
+         if not (p2pkhaddr_p palpha) then raise (Failure "proofgold addresses for swap must be p2pkh");
+         let pbeta = pfgaddrstr_addr pbetastr in
+         if not (p2pkhaddr_p pbeta) then raise (Failure "proofgold addresses for swap must be p2pkh");
+         let (_,av) = palpha in
+         let (_,bv) = pbeta in
+         let secrh = hexstring_hashval secrhstr in
+         let txid = hexstring_hashval txidstr in
+         let txidrh = hashval_rev txid in
+         let vout = Int32.of_string voutstr in
+         let satoshis = litoshis_of_ltc btcamt in
+         let (btcgamma2,btcscrl,_) = Commands.createbtchtlc2 bv av 127 true secrh in (* this is the htlc for bitcoin: Bob and secret or Alice after 127 confirmations  *)
+         let txs1b = Buffer.create 200 in
+         Buffer.add_char txs1b '\002';
+         Buffer.add_char txs1b '\000';
+         Buffer.add_char txs1b '\000';
+         Buffer.add_char txs1b '\000';
+         Buffer.add_char txs1b '\001';
+         ignore (seo_hashval seosb txidrh (txs1b,None));
+         List.iter (fun z -> Buffer.add_char txs1b (Char.chr z)) (blnum32 vout);
+         let txs1 = Buffer.contents txs1b in
+         Buffer.clear txs1b;
+         Buffer.add_string txs1b "\127\000\000\000\001";
+         List.iter (fun z -> Buffer.add_char txs1b (Char.chr z)) (blnum64 satoshis);
+         Buffer.add_char txs1b (Char.chr 0x19);
+         Buffer.add_char txs1b (Char.chr 0x76);
+         Buffer.add_char txs1b (Char.chr 0xa9);
+         Buffer.add_char txs1b (Char.chr 0x14);
+         ignore (seo_be160 seosb av (txs1b,None));
+         Buffer.add_char txs1b (Char.chr 0x88);
+         Buffer.add_char txs1b (Char.chr 0xac);
+         Buffer.add_string txs1b "\000\000\000\000"; (*** locktime ***)
+         let txs2 = Buffer.contents txs1b in
+         Buffer.clear txs1b;
+         Buffer.add_string txs1b "\001\000\000\000"; (*** SIGHASH_ALL ***)
+         let txs3 = Buffer.contents txs1b in
+         Buffer.clear txs1b;
+         List.iter (fun z -> Buffer.add_char txs1b (Char.chr z)) btcscrl;
+         let redscr = Buffer.contents txs1b in
+         let redscrlen = String.length redscr in
+         let presignedtx = Printf.sprintf "%s%c%s%s%s" txs1 (Char.chr redscrlen) redscr txs2 txs3 in
+         let presignedtxh = sha256dstr presignedtx in
+         let r = strong_rand_256() in
+         let ((ka,ba),pubkey) = Commands.privkey_and_pubkey_from_wallet av in
+         let sg = signat_hashval presignedtxh ka r in
+         let (sgr,sgs) = sg in
+         let sgs = if Zarithint.gt_big_int sgs (Zarithint.shift_right_towards_zero_big_int Secp256k1._n 1) then Zarithint.sub_big_int Secp256k1._n sgs else sgs in
+         Buffer.clear txs1b;
+         Buffer.add_char txs1b (Char.chr 0x30);
+         if Zarithint.gt_big_int (Zarithint.shift_right_towards_zero_big_int sgr 255) Zarithint.zero_big_int then
+           begin
+             Buffer.add_char txs1b (Char.chr 0x45);
+             Buffer.add_char txs1b (Char.chr 0x02);
+             Buffer.add_char txs1b (Char.chr 0x21);
+             Buffer.add_char txs1b (Char.chr 0x00);
+           end
+         else
+           begin
+             Buffer.add_char txs1b (Char.chr 0x44);
+             Buffer.add_char txs1b (Char.chr 0x02);
+             Buffer.add_char txs1b (Char.chr 0x20);
+           end;
+         ignore (seo_hashval seosb (big_int_hashval sgr) (txs1b,None));
+         Buffer.add_char txs1b (Char.chr 0x02);
+         Buffer.add_char txs1b (Char.chr 0x20);
+         ignore (seo_hashval seosb (big_int_hashval sgs) (txs1b,None));
+         Buffer.add_char txs1b (Char.chr 0x01);
+         let dersg = Buffer.contents txs1b in
+         let pubkeyhex = pubkey_hexstring pubkey ba in
+         let pubkeybinstr = hexstring_string pubkeyhex in
+         let sgscr = Printf.sprintf "%c%s%c%s%c%c%c%s" (Char.chr (String.length dersg)) dersg (Char.chr (String.length pubkeybinstr)) pubkeybinstr (Char.chr 0x00) (Char.chr 0x4c) (Char.chr redscrlen) redscr in
+         Printf.fprintf oc "Send this bitcoin tx to refund the btc from the expired swap attempt.\n";
+         Printf.fprintf oc "It can be sent using sendrawtransaction in Bitcoin Core or broadcast using some Bitcoin explorers.\n";
+         Printf.fprintf oc "%s%02x%s%s\n" (string_hexstring txs1) (String.length sgscr) (string_hexstring sgscr) (string_hexstring txs2)
+      | _ -> raise BadCommandForm);
+  ac "signbtctx" "signbtctx <privatekey> <unsignedbtctxhex>" "signbtctx creates a DER encoded signature of the given btc tx (SIGHASH_ALL) using the given private key.\nThe private key can be given in btc or pfg WIF format.\nThe DER signature is prefixed by a byte giving its length.\nIt is up to the user to build the signed tx using this DER signature.\n"
+    (fun oc al ->
+      match al with
+      | [wif;btctxstr] ->
+         if String.length wif = 0 then raise BadCommandForm;
+         let (k,b) =
+           if wif.[0] = 'k' then
+             privkey_from_wif wif
+           else
+             privkey_from_btcwif wif
+         in
+         let tx = Printf.sprintf "%s\001\000\000\000" (hexstring_string btctxstr) in
+         let presignedtxh = sha256dstr tx in
+         let r = strong_rand_256() in
+         let sg = signat_hashval presignedtxh k r in
+         let (sgr,sgs) = sg in
+         let sgs = if Zarithint.gt_big_int sgs (Zarithint.shift_right_towards_zero_big_int Secp256k1._n 1) then Zarithint.sub_big_int Secp256k1._n sgs else sgs in
+         let dersb = Buffer.create 75 in
+         Buffer.add_char dersb (Char.chr 0x30);
+         if Zarithint.gt_big_int (Zarithint.shift_right_towards_zero_big_int sgr 255) Zarithint.zero_big_int then
+           begin
+             Buffer.add_char dersb (Char.chr 0x45);
+             Buffer.add_char dersb (Char.chr 0x02);
+             Buffer.add_char dersb (Char.chr 0x21);
+             Buffer.add_char dersb (Char.chr 0x00);
+           end
+         else
+           begin
+             Buffer.add_char dersb (Char.chr 0x44);
+             Buffer.add_char dersb (Char.chr 0x02);
+             Buffer.add_char dersb (Char.chr 0x20);
+           end;
+         ignore (seo_hashval seosb (big_int_hashval sgr) (dersb,None));
+         Buffer.add_char dersb (Char.chr 0x02);
+         Buffer.add_char dersb (Char.chr 0x20);
+         ignore (seo_hashval seosb (big_int_hashval sgs) (dersb,None));
+         Buffer.add_char dersb (Char.chr 0x01);
+         let dersg = Buffer.contents dersb in
+         Printf.fprintf oc "%02x%s\n" (String.length dersg) (string_hexstring dersg)
+      | _ -> raise BadCommandForm);
+  ac "extractsecretfrombtctx" "extractsecretfrombtctx <txid> <vout> <btctxhex>" "extract the secret from a btc tx spending an htlc tx\nThis is useful for btc atomic swaps.\nIf the btc tx is too big, use extractsecretfrombtctxfile.\n"
+    (fun oc al ->
+      match al with
+      | [txidstr;voutstr;btctx] ->
+         let txid = hexstring_hashval txidstr in
+         let vout = int_of_string voutstr in
+         let secr = Commands.extract_secret_from_btctx txid vout (hexstring_string btctx) in
+         Printf.fprintf oc "Secret: %s\n" (hashval_hexstring secr)
+      | _ -> raise BadCommandForm);
+  ac "extractsecretfrombtctxfile" "extractsecretfrombtctxfile <txid> <vout> <btctxhexfile>" "extract the secret from a btc tx spending an htlc tx\nThis is useful for btc atomic swaps.\nIf the btc tx is small, extractsecretfrombtctx will work.\n"
+    (fun oc al ->
+      match al with
+      | [txidstr;voutstr;btctxfile] ->
+         let txid = hexstring_hashval txidstr in
+         let vout = int_of_string voutstr in
+         let f = open_in btctxfile in
+         let l = input_line f in
+         close_in f;
+         let secr = Commands.extract_secret_from_btctx txid vout (hexstring_string l) in
+         Printf.fprintf oc "Secret: %s\n" (hashval_hexstring secr)
+      | _ -> raise BadCommandForm);
+  ac "createhtlc" "createhtlc <p2pkhaddr:alpha> <p2pkhaddr:beta> <timelock> [<secret>] [absolute] [json]"
+    "Create hash timelock contract script and address.\nThe controller of address alpha can spend with the secret.\nThe controller of the address beta can spend after the timelock.\nThe controller of address alpha should call this command and the secret will be held in alpha's wallet.\nA hex 32 byte secret can optionally be given, otherwise one will be randomly generated.\nIf 'absolute' is given, then absolute lock time (CLTV) is used. Otherwise relative lock time (CSV) is used.\nThe timelock is either in block time (if less than 500000000) or unix time (otherwise).\nOnly block time can be used with relative block time."
     (fun oc al ->
       let (alphas,alpha,betas,beta,tmlock,rel,secr,jb) =
 	match al with
-	  [alpha;beta;tmlock] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,big_int_hashval (strong_rand_256()),false)
-	| [alpha;beta;tmlock;"relative"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,big_int_hashval (strong_rand_256()),false)
-	| [alpha;beta;tmlock;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,big_int_hashval (strong_rand_256()),false)
+	  [alpha;beta;tmlock] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,big_int_hashval (strong_rand_256()),false)
+	| [alpha;beta;tmlock;"absolute"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,big_int_hashval (strong_rand_256()),false)
+	| [alpha;beta;tmlock;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,big_int_hashval (strong_rand_256()),false)
 	| [alpha;beta;tmlock;secr] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,hexstring_hashval secr,false)
-	| [alpha;beta;tmlock;"relative";"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,big_int_hashval (strong_rand_256()),true)
-	| [alpha;beta;tmlock;"relative";secr] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,hexstring_hashval secr,false)
-	| [alpha;beta;tmlock;secr;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,hexstring_hashval secr,true)
-	| [alpha;beta;tmlock;"relative";secr;"true"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,hexstring_hashval secr,true)
+	| [alpha;beta;tmlock;"absolute";"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,big_int_hashval (strong_rand_256()),true)
+	| [alpha;beta;tmlock;secr;"absolute"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,hexstring_hashval secr,false)
+	| [alpha;beta;tmlock;secr;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,hexstring_hashval secr,true)
+	| [alpha;beta;tmlock;secr;"absolute";"true"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,hexstring_hashval secr,true)
 	| _ -> raise BadCommandForm
       in
       if not (p2pkhaddr_p alpha) then raise (Failure (Printf.sprintf "%s is not a p2pkh address" alphas));
@@ -5463,15 +5892,51 @@ let initialize_commands () =
 	  Printf.fprintf oc "Secret: %s\n" (hashval_hexstring secr);
 	  Printf.fprintf oc "Hash of secret: %s\n" (hashval_hexstring secrh)
 	end);
-  ac "verifycommitmenttx" "verifycommitmenttx alpha beta fundaddress fundid1 fundid2 alphaamt betaamt secrethash tx [json]"
+  ac "createptlc" "createptlc <p2pkhaddr:alpha> <p2pkhaddr:beta> <propid> <timelock> [absolute] [json]"
+    "Create prop timelock contract script and address.\nThe controller of address alpha can spend if the proposition has been proven.\nThe controller of the address beta can spend after the timelock.\nIf 'absolute' is given, then absolute lock time (CLTV) is used. Otherwise relative lock time (CSV) is used.\nThe timelock is either in block time (if less than 500000000) or unix time (otherwise).\nOnly block time can be used with relative block time."
+    (fun oc al ->
+      let (alphas,alpha,betas,beta,tmlock,pid,rel,jb) =
+	match al with
+	  [alpha;beta;pid;tmlock] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,hexstring_hashval pid,true,false)
+	| [alpha;beta;pid;tmlock;"absolute"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,hexstring_hashval pid,false,false)
+	| [alpha;beta;pid;tmlock;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,hexstring_hashval pid,true,true)
+	| [alpha;beta;pid;tmlock;"absolute";"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,hexstring_hashval pid,false,true)
+	| _ -> raise BadCommandForm
+      in
+      if not (p2pkhaddr_p alpha) then raise (Failure (Printf.sprintf "%s is not a p2pkh address" alphas));
+      if not (p2pkhaddr_p beta) then raise (Failure (Printf.sprintf "%s is not a p2pkh address" betas));
+      if tmlock < 1l then raise (Failure ("locktime must be positive"));
+      if rel && tmlock >= 500000000l then raise (Failure ("relative lock time must be given in number of blocks"));
+      let (_,av) = alpha in
+      let (_,bv) = beta in
+      let (gamma,scrl) = Commands.createptlc av bv tmlock rel pid in
+      if jb then
+	begin
+	  let redscr = Buffer.create 10 in
+	  List.iter (fun x -> Buffer.add_string redscr (Printf.sprintf "%02x" x)) scrl;
+	  let jol = [("address",JsonStr(addr_pfgaddrstr (p2shaddr_addr gamma)));
+		     ("redeemscript",JsonStr(Buffer.contents redscr));
+		     ("propid",JsonStr(hashval_hexstring pid))]
+	  in
+	  print_jsonval oc (JsonObj(jol))
+	end
+      else
+	begin
+	  Printf.fprintf oc "P2sh address: %s\n" (addr_pfgaddrstr (p2shaddr_addr gamma));
+	  Printf.fprintf oc "Redeem script: ";
+	  List.iter (fun x -> Printf.fprintf oc "%02x" x) scrl;
+	  Printf.fprintf oc "\n";
+	  Printf.fprintf oc "Propid: %s\n" (hashval_hexstring pid);
+	end);
+  ac "verifycommitmenttx" "verifycommitmenttx alpha beta fundaddress fundid1 fundid2 alphaamt betaamt secrethash tmlock tx [json]"
     "Verify a commitment tx"
     (fun oc al ->
-      let (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,txs,jb) =
+      let (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,tmlcks,txs,jb) =
 	match al with
-	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;secrethashs;txs] ->
-	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,txs,false)
-	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;secrethashs;txs;"json"] ->
-	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,txs,true)
+	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;secrethashs;tmlcks;txs] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,tmlcks,txs,false)
+	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;secrethashs;tmlcks;txs;"json"] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,tmlcks,txs,true)
 	| _ -> raise BadCommandForm
       in
       let alpha = pfgaddrstr_addr alphas in
@@ -5482,6 +5947,7 @@ let initialize_commands () =
       let alphaamt = atoms_of_bars alphaamts in
       let betaamt = atoms_of_bars betaamts in
       let secrethash = hexstring_hashval secrethashs in
+      let tmlck = Int32.of_string tmlcks in
       let txs2 = hexstring_string txs in
       let (((tauin,tauout) as tau,(tausigsin,_)),_) = sei_stx seis (txs2,String.length txs2,None,0,0) in
       let inputsok =
@@ -5505,7 +5971,7 @@ let initialize_commands () =
 	  begin
 	    let (_,av) = alpha in
 	    let (_,bv) = beta in
-	    let (delta,scrl,secrh) = Commands.createhtlc2 bv av 28l true secrethash in
+	    let (delta,scrl,secrh) = Commands.createhtlc2 bv av tmlck true secrethash in
 	    if Some(p2shaddr_addr delta) = htlcaddr then
 	      begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
 		if jb then
@@ -5529,7 +5995,7 @@ let initialize_commands () =
 	  begin
 	    let (_,av) = alpha in
 	    let (_,bv) = beta in
-	    let (delta,scrl,secrh) = Commands.createhtlc2 av bv 28l true secrethash in
+	    let (delta,scrl,secrh) = Commands.createhtlc2 av bv tmlck true secrethash in
 	    if Some(p2shaddr_addr delta) = htlcaddr then
 	      begin (** it's good, could also check if alpha has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
 		if jb then
@@ -5570,6 +6036,115 @@ let initialize_commands () =
 	      print_jsonval oc (JsonBool(false))
 	    else
 	      Printf.fprintf oc "Inputs and outputs do not match the form of a commitment tx.\n"
+	  end);
+  ac "verifypropcommitmenttx" "verifypropcommitmenttx alpha beta fundaddress fundid1 fundid2 alphaamt betaamt propid tmlock tx [json]"
+    "Verify a prop commitment tx"
+    (fun oc al ->
+      let (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,pids,tmlcks,txs,jb) =
+	match al with
+	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;pids;tmlcks;txs] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,pids,txs,tmlcks,false)
+	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;pids;txs;tmlcks;"json"] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,pids,txs,tmlcks,true)
+	| _ -> raise BadCommandForm
+      in
+      let alpha = pfgaddrstr_addr alphas in
+      let beta = pfgaddrstr_addr betas in
+      let gamma = pfgaddrstr_addr gammas in
+      let fundid1 = hexstring_hashval fundid1s in
+      let fundid2 = hexstring_hashval fundid2s in
+      let alphaamt = atoms_of_bars alphaamts in
+      let betaamt = atoms_of_bars betaamts in
+      let pid = hexstring_hashval pids in
+      let tmlck = Int32.of_string tmlcks in
+      let txs2 = hexstring_string txs in
+      let (((tauin,tauout) as tau,(tausigsin,_)),_) = sei_stx seis (txs2,String.length txs2,None,0,0) in
+      let inputsok =
+	match tauin with
+	| [(a1,aid1);(a2,aid2)] when a1 = gamma && a2 = gamma && aid1 = fundid1 && aid2 = fundid2 -> true
+	| _ -> false
+      in
+      let (outputsok,ptlcaddr) =
+	match tauout with
+	| [(a01,(Some(aaddr2,0L,false),Currency(aamt2)));(a02,(Some(baddr2,0L,false),Currency(bamt2)))] when aamt2 = alphaamt && bamt2 = betaamt && a01 = gamma && a02 = gamma ->
+	    if payaddr_addr aaddr2 = alpha then (*** this must be a commitment for beta to close the channel ***)
+	      (2,Some(payaddr_addr baddr2))
+	    else if payaddr_addr baddr2 = beta then (*** this must be a commitment for alpha to close the channel ***)
+	      (1,Some(payaddr_addr aaddr2))
+	    else
+	      (0,None)
+	| _ -> (0,None)
+      in
+      if inputsok then
+	if outputsok = 1 then
+	  begin
+	    let (_,av) = alpha in
+	    let (_,bv) = beta in
+	    let (delta,scrl) = Commands.createptlc bv av tmlck true pid in
+	    if Some(p2shaddr_addr delta) = ptlcaddr then
+	      begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+		if jb then
+		  print_jsonval oc (JsonObj([("result",JsonBool(true));("commitmentfor",JsonStr(alphas))]))
+		else
+		  Printf.fprintf oc "Valid prop commitment tx for %s\n" alphas
+	      end
+	    else
+	      begin
+		if jb then
+		  print_jsonval oc (JsonBool(false))
+		else
+		  begin
+		    Printf.fprintf oc "Appears to be a prop commitment tx for alpha, but ptlc address mismatch:\nFound %s\nExpected %s\n"
+		      (addr_pfgaddrstr (p2shaddr_addr delta))
+		      (match ptlcaddr with Some(delta2) -> addr_pfgaddrstr delta2 | None -> "None")
+		  end
+	      end
+	  end
+	else if outputsok = 2 then
+	  begin
+	    let (_,av) = alpha in
+	    let (_,bv) = beta in
+	    let (delta,scrl) = Commands.createptlc av bv tmlck true pid in
+	    if Some(p2shaddr_addr delta) = ptlcaddr then
+	      begin (** it's good, could also check if alpha has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+		if jb then
+		  print_jsonval oc (JsonObj([("result",JsonBool(true));("propcommitmentfor",JsonStr(betas))]))
+		else
+		  Printf.fprintf oc "Valid prop commitment tx for %s\n" betas
+	      end
+	    else
+	      begin
+		if jb then
+		  print_jsonval oc (JsonBool(false))
+		else
+		  begin
+		    Printf.fprintf oc "Appears to be a prop commitment tx for beta, but htlc address mismatch:\nFound %s\nExpected %s\n"
+		      (addr_pfgaddrstr (p2shaddr_addr delta))
+		      (match ptlcaddr with Some(delta2) -> addr_pfgaddrstr delta2 | None -> "None")
+		  end
+	      end
+	  end
+	else
+	  begin
+	    if jb then
+	      print_jsonval oc (JsonBool(false))
+	    else
+	      Printf.fprintf oc "Outputs do not match the form of a prop commitment tx.\n"
+	  end
+      else
+	if not (outputsok = 0) then
+	  begin
+	    if jb then
+	      print_jsonval oc (JsonBool(false))
+	    else
+	      Printf.fprintf oc "Inputs do not match the form of a prop commitment tx.\n"
+	  end
+	else
+	  begin
+	    if jb then
+	      print_jsonval oc (JsonBool(false))
+	    else
+	      Printf.fprintf oc "Inputs and outputs do not match the form of a prop commitment tx.\n"
 	  end);
   ac "createmultisig" "createmultisig <m> <jsonarrayofpubkeys>" "Create an m-of-n script and address"
     (fun oc al ->
@@ -5983,7 +6558,7 @@ let initialize_commands () =
 		      if txbytes > 450000 then
 			Printf.fprintf oc "Tx is > 450K bytes and will be considered too big to include in a block\n"
 		      else
-			Commands.validatetx2 oc (Int64.add 1L blkh) tm tr sr lr txbytes stau
+			Commands.validatetx2 (Some(oc)) (Int64.add 1L blkh) tm tr sr lr txbytes stau
 		    with exn ->
 		      Printf.fprintf oc "Trouble validating tx %s\n" (Printexc.to_string exn)
 		  with Not_found ->
@@ -7372,6 +7947,14 @@ let main () =
 	  Printf.fprintf stdout "Ignoring Uncaught Failure: %s\n" x; flush stdout;
 (**	  failure_delay() **)
       | BannedPeer -> Printf.fprintf stdout "Banned Peer"
+      | StakingPauseMsg(del,msg) ->
+	 Printf.fprintf stdout "Staking pause of %f seconds: %s\n" del msg
+      | StakingPause(del) ->
+	 Printf.fprintf stdout "Staking pause of %f seconds\n" del
+      | StakingProblemPause ->
+	 Printf.fprintf stdout "Staking problem exception.\n"
+      | StakingPublishBlockPause ->
+	 Printf.fprintf stdout "Staking problem block exception.\n"
       | exn -> (*** unexpected ***)
 	  Printf.fprintf stdout "Ignoring Uncaught Exception: %s\n" (Printexc.to_string exn); flush stdout;
 (**	  failure_delay() **)

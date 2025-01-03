@@ -1,4 +1,5 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
+(* Copyright (c) 2022 The Proofgold Love developers *)
 (* Copyright (c) 2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015-2017 The Qeditas developers *)
@@ -26,6 +27,7 @@ open Block
 open Blocktree
 open Commands
 
+let since = ref None
 let tenltc = big_int_of_string "1000000000"
 let z10000 = big_int_of_int 10000
 let onemillion = big_int_of_int 1000000
@@ -203,6 +205,7 @@ let rec hlist_stakingassets blkh alpha hl n =
 
 let extraburn : int64 ref = ref 0L;;
 
+exception StakingPauseMsg of float * string
 exception StakingPause of float
 exception StakingProblemPause
 exception StakingPublishBlockPause
@@ -265,7 +268,13 @@ let compute_staking_chances (prevblkh,lbk,ltx) fromtm totm =
 	        | _ -> ())
 	    !Commands.walletendorsements;
           log_string (Printf.sprintf "%d staking assets\n" (List.length !Commands.stakingassets));
-          let lul = ltc2_listunspent () in
+          let lul =
+            try
+              ltc2_listunspent ()
+            with Not_found ->
+              log_string (Printf.sprintf "Staking thread could not get unspent txs from second ltc node. Make sure config params like ltcrpcuser2 and ltcrpcpass2 are set correctly (e.g., in your proofgold.conf file). If you are only running one ltc node, the values of ltcrpcuser2 and ltcrpcpass2 should be the same as the values of ltcrpcuser and ltcrpcpass. Delaying staking thread for one hour in case this is a temporary problem connecting to the second ltc node.");
+              raise (StakingPauseMsg(3600.0,"Doublecheck config params like ltcrpcuser2 and ltcrpcpass2 for connection to second ltc node (the one for spending)"))
+          in
           if not (!Commands.stakingassets = []) || not (lul = []) then
 	    let nextstake i stkaddr h bday obl v toburn =
 	      Hashtbl.add nextstakechances (lbk,ltx) (NextStake(i,stkaddr,h,bday,obl,v,toburn,ref None,thyroot,thytree,sigroot,sigtree));
@@ -375,12 +384,17 @@ let compute_staking_chances (prevblkh,lbk,ltx) fromtm totm =
 	    with
 	    | Exit ->
                ()
+            | StakingPause(del) -> raise (StakingPause(del))
+            | StakingPauseMsg(del,msg) -> raise (StakingPauseMsg(del,msg))
 	    | exn ->
 	       log_string (Printf.sprintf "Unexpected Exception in Staking Loop: %s\n" (Printexc.to_string exn))
       end
     else
       raise Not_found
-  with exn ->
+  with
+  | StakingPauseMsg(del,msg) -> raise (StakingPauseMsg(del,msg))
+  | StakingPause(del) -> raise (StakingPause(del))
+  | exn ->
     log_string (Printf.sprintf "Unexpected Exception in Staking: %s\n" (Printexc.to_string exn));
     raise StakingProblemPause
         
@@ -495,7 +509,7 @@ let stakingthread () =
       if not (!pendingltctxs = []) then (log_string (Printf.sprintf "there are pending ltc txs; delaying staking\n"); raise (StakingPause(60.0)));
       (match !pendingpfgblock with Some(p) -> p() | None -> ()); (* if a pfg block has been staked, but not yet burned *)
       try
-        let (pbhh1,lbk,ltx) = get_bestblock_cw_exception (if nw < Int64.add !Config.genesistimestamp 604800L && !Config.genesis then Genesis else SyncIssue) in
+        let (pbhh1,lbk,ltx) = get_bestblock_cw_exception2 (if nw < Int64.add !Config.genesistimestamp 604800L && !Config.genesis then Genesis else SyncIssue) in
         try
 	  let (_,plmedtm,pburned,(ptxid1,pvout1),par,csm0,pblkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
 	  let (tar0,pbhtm,prevledgerroot,thtr,sgtr) = Db_validheadervals.dbget (hashpair lbk ltx) in
@@ -560,11 +574,13 @@ let stakingthread () =
 			              try
 				        let unsupportederror alpha h = log_string (Printf.sprintf "Could not find asset %s at address %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha)) in
 				        let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin !dync unsupportederror) in
-				        if tx_signatures_valid blkh tm al ((tauin,tauout),sg) then
+                                        begin
+                                          match tx_signatures_valid blkh tm al ((tauin,tauout),sg) with
+                                          | Some(provenl) ->
 				          begin
                                             let counter1 = !counter in
                                             try
-				              let nfee = ctree_supports_tx counter true true false !dyntht !dynsigt blkh (tauin,tauout) !dync in
+				              let nfee = ctree_supports_tx counter true true false !dyntht !dynsigt blkh provenl (tauin,tauout) !dync in
 				              if nfee > 0L then (*** note: nfee is negative of the fee, not the fee itself ***)
 				                begin
                                                 (*				  log_string (Printf.sprintf "tx %s has negative fees %Ld; removing from pool\n" (hashval_hexstring h) nfee); *)
@@ -591,11 +607,12 @@ let stakingthread () =
 					          end
                                             with _ -> counter := counter1
 				          end
-				        else
+                                          | None ->
 				          begin
                                             (*			      log_string (Printf.sprintf "tx %s has an invalid signature; removing from pool\n" (hashval_hexstring h)); *)
 				            remove_from_txpool h;
 				          end
+                                        end
 			              with exn ->
 				        begin
                                           (*			    log_string (Printf.sprintf "Exception %s raised while trying to validate tx %s; this may mean the tx is not yet supported so leaving it in the pool\n" (Printexc.to_string exn) (hashval_hexstring h)); *)
@@ -898,7 +915,7 @@ let stakingthread () =
 			      end;
 			      let publish_new_block_2 () =
 			        log_string (Printf.sprintf "called publish_new_block_2\n");
-			        let (pbh2,lbk2,ltx2) = get_bestblock_cw_exception (StakingPause(300.0)) in
+			        let (pbh2,lbk2,ltx2) = get_bestblock_cw_exception2 (StakingPause(300.0)) in
 			        if not ((pbh2,lbk2,ltx2) = (pbhh1,lbk,ltx)) then (*** if the best block has changed, don't publish it ***)
                                   begin log_string "best block changed, not publishing\n";
 			                pendingpfgblock := None
@@ -957,7 +974,7 @@ let stakingthread () =
 			        pendingpfgblock := Some(publish_new_block_2);
 			        raise StakingPublishBlockPause
 			      in
- 			      let (pbh2,lbk2,ltx2) = get_bestblock_cw_exception (StakingPause(300.0)) in
+ 			      let (pbh2,lbk2,ltx2) = get_bestblock_cw_exception2 (StakingPause(300.0)) in
 			      if (pbh2,lbk2,ltx2) = (pbhh1,lbk,ltx) then (*** if the best block has changed, don't publish it ***)
 			        publish_new_block()
 			    with MaxAssetsAtAddress ->
@@ -1032,11 +1049,13 @@ let stakingthread () =
 				      try
 				        let unsupportederror alpha h = log_string (Printf.sprintf "Could not find asset %s at address %s\n" (hashval_hexstring h) (addr_pfgaddrstr alpha)) in
 				        let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true true false tauin !dync unsupportederror) in
-				        if tx_signatures_valid blkh tm al ((tauin,tauout),sg) then
+                                        begin
+				          match tx_signatures_valid blkh tm al ((tauin,tauout),sg) with
+                                          | Some(provenl) ->
 				          begin
                                             let counter1 = !counter in
                                             try
-					      let nfee = ctree_supports_tx counter true true false !dyntht !dynsigt blkh (tauin,tauout) !dync in
+					      let nfee = ctree_supports_tx counter true true false !dyntht !dynsigt blkh provenl (tauin,tauout) !dync in
 					      if nfee > 0L then (*** note: nfee is negative of the fee, not the fee itself ***)
 					        begin
                                                   (*				  log_string (Printf.sprintf "tx %s has negative fees %Ld; removing from pool\n" (hashval_hexstring h) nfee); *)
@@ -1063,11 +1082,12 @@ let stakingthread () =
 					          end
                                             with _ -> counter := counter1
 				          end
-				        else
+                                          | None ->
 				          begin
                                             (*			      log_string (Printf.sprintf "tx %s has an invalid signature; removing from pool\n" (hashval_hexstring h)); *)
 					    remove_from_txpool h;
 				          end
+                                        end
 				      with exn ->
 				        begin
                                           (*			    log_string (Printf.sprintf "Exception %s raised while trying to validate tx %s; this may mean the tx is not yet supported so leaving it in the pool\n" (Printexc.to_string exn) (hashval_hexstring h)); *)
@@ -1370,7 +1390,7 @@ let stakingthread () =
 			      end;
 			      let publish_new_block_2 () =
 			        log_string (Printf.sprintf "called publish_new_block_2\n");
-			        let (pbh2,lbk2,ltx2) = get_bestblock_cw_exception (StakingPause(300.0)) in
+			        let (pbh2,lbk2,ltx2) = get_bestblock_cw_exception2 (StakingPause(300.0)) in
 			        if not ((pbh2,lbk2,ltx2) = (pbhh1,lbk,ltx)) then (*** if the best block has changed, don't publish it ***)
                                   begin log_string "best block changed, not publishing\n";
 			                pendingpfgblock := None
@@ -1433,33 +1453,54 @@ let stakingthread () =
 			        pendingpfgblock := Some(publish_new_block_2);
 			        raise StakingPublishBlockPause
 			      in
- 			      let (pbh2,lbk2,ltx2) = get_bestblock_cw_exception (StakingPause(300.0)) in
-			      if (pbh2,lbk2,ltx2) = (pbhh1,lbk,ltx) then (*** if the best block has changed, don't publish it ***)
-			        publish_new_block()
+                              if !Config.waitforblock <= 0 then
+                                publish_new_block()
+                              else
+ 			        let (pbh2,lbk2,ltx2) = get_bestblock_cw_exception2 (StakingPause(300.0)) in
+			        if (pbh2,lbk2,ltx2) = (pbhh1,lbk,ltx) then (*** if the best block has changed, don't publish it ***)
+			          publish_new_block()
 			    with MaxAssetsAtAddress ->
 			      log_string (Printf.sprintf "Refusing to stake since the coinstake tx would put too many assets in an address.\n")
 		          end
 		      end
 	         end
 	      | NoStakeUpTo(tm) ->
-	         begin (*** before checking for future chances to stake, make sure we are clearly at one of the best chaintips ***)
-	           match ltc_best_chaintips () with
-	           | [] ->
-		      begin
-		        (*** this should not have happened, since the header should not have been completely formed until the burn was complete ***)
-		        log_string (Printf.sprintf "Refusing to stake on top of apparently unburned %s\nWaiting a few minutes to recheck for burn." (hashval_hexstring pbhh1));
-		        raise (StakingPause(300.0))
+	         begin (*** before checking for future chances to stake, make sure we are clearly at one of the best chaintips (unless waitforblocks seconds have passed) ***)
+                   let f () =
+                     match ltc_best_chaintips () with
+	             | [] ->
+		        begin
+		          (*** this should not have happened, since the header should not have been completely formed until the burn was complete ***)
+		          log_string (Printf.sprintf "Refusing to stake on top of apparently unburned %s\nWaiting a few minutes to recheck for burn." (hashval_hexstring pbhh1));
+		          raise (StakingPause(300.0))
+		        end
+	             | (bestctips::othctipsl) ->
+		        begin
+		          if List.mem pbhh1 bestctips then
+		            (if List.length bestctips > 1 then (log_string (Printf.sprintf "Staking on top of %s, orphaning other equally good tips.\n" (hashval_hexstring pbhh1))))
+		          else
+		            begin
+			      log_string (Printf.sprintf "Refusing to stake on top of %s when there are better chaintips. Invalidate them by hand to force staking.\n" (hashval_hexstring pbhh1));
+                              if !Config.waitforblock < 3600 then
+			        raise (StakingPause(float_of_int !Config.waitforblock))
+                              else
+			        raise (StakingPause(3600.0))
+		            end
 		      end
-	           | (bestctips::othctipsl) ->
-		      begin
-		        if List.mem pbhh1 bestctips then
-		          (if List.length bestctips > 1 then (log_string (Printf.sprintf "Staking on top of %s, orphaning other equally good tips.\n" (hashval_hexstring pbhh1))))
-		        else
-		          begin
-			    log_string (Printf.sprintf "Refusing to stake on top of %s when there are better chaintips. Invalidate them by hand to force staking.\n" (hashval_hexstring pbhh1));
-			    raise (StakingPause(3600.0))
-		          end
-		      end
+	           in
+                   let nw = Int64.of_float (Unix.time()) in
+		   if !Config.waitforblock <= 0 then
+		     since := None
+		   else
+                     match !since with
+                     | Some(s) ->
+                        if Int64.to_int (Int64.sub nw s) < (!Config.waitforblock / 2) then
+                          f()
+                        else
+                          since := None
+                     | None ->
+                        since := Some(nw);
+                        f()
 	         end;
 	         let ltm = ltc_medtime() in
 	         let stm = Int64.sub ltm 14400L in
@@ -1812,14 +1853,14 @@ let stakingthread () =
 		       let tht = lookup_thytree thtr in
 		       let sgt = lookup_sigtree sgtr in
 		       process_block !Utils.log !Config.fullnode true false false (lblkid,ltxid) newblkid ((bhdnew,bhsnew),bdnew) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1;
-		       missingheaders := List.filter (fun (_,k) -> not (newblkid = k)) !missingheaders;
-		       missingdeltas := List.filter (fun (_,k) -> not (newblkid = k)) !missingdeltas;
+		       missingheaders := List.filter (fun (_,k,_) -> not (newblkid = k)) !missingheaders;
+		       missingdeltas := List.filter (fun (_,k,_) -> not (newblkid = k)) !missingdeltas;
 		       pending := None
 		     end
 		  | None ->
 		     process_block !Utils.log !Config.fullnode true false false (lblkid,ltxid) newblkid ((bhdnew,bhsnew),bdnew) None None None None 1L !genesisstakemod !genesistarget lmedtm burned txid1 vout1;
-		     missingheaders := List.filter (fun (_,k) -> not (newblkid = k)) !missingheaders;
-		     missingdeltas := List.filter (fun (_,k) -> not (newblkid = k)) !missingdeltas;
+		     missingheaders := List.filter (fun (_,k,_) -> not (newblkid = k)) !missingheaders;
+		     missingdeltas := List.filter (fun (_,k,_) -> not (newblkid = k)) !missingdeltas;
 		     pending := None
 		end
 	     | None -> raise Exit
@@ -1828,6 +1869,10 @@ let stakingthread () =
 	     sleepuntil := ltc_medtime()
 	 end
     with
+    | StakingPauseMsg(del,msg) ->
+	log_string (Printf.sprintf "Staking pause of %f seconds: %s\n" del msg);
+	Thread.delay del;
+	sleepuntil := ltc_medtime()
     | StakingPause(del) ->
 	log_string (Printf.sprintf "Staking pause of %f seconds\n" del);
 	Thread.delay del;

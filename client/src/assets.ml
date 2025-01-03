@@ -164,6 +164,7 @@ the current block height. *)
 let rec add_vout bday txh outpl i =
   match outpl with
   | [] -> []
+  | (alpha,(obl,Marker))::outpr when termaddr_p alpha -> add_vout bday txh outpr i
   | (alpha,(obl,u))::outpr -> (alpha,(hashpair txh (hashint32 i),bday,obl,u))::add_vout bday txh outpr (Int32.add i 1l)
 
 (* The preasset_value function calculates the value of a preasset, taking into
@@ -192,6 +193,18 @@ let asset_value blkh u = preasset_value blkh (assetbday u) (assetpre u)
 (* The asset_value_sum function calculates the total value of a list of assets. *)
 let asset_value_sum blkh al =
   List.fold_left Int64.add 0L (List.map (fun a -> match asset_value blkh a with Some v -> v | None -> 0L) al)
+
+let preasset_units u =
+  match u with
+  | Currency(v) -> Some(v)
+  | Bounty(v) -> Some(v)
+  | OwnsObj(_,_,vo) -> vo
+  | OwnsProp(_,_,vo) -> vo
+  | RightsObj(_,v) -> Some(v)
+  | RightsProp(_,v) -> Some(v)
+  | _ -> None
+
+let asset_units u = preasset_units (assetpre u)
 
 (* The output_signaspec_uses_objs function returns a list of object-theory pairs
 representing the objects used by the signatures in a list of addr_preassetpairs. *)

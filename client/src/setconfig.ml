@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2015 The Qeditas developers *)
 (* Copyright (c) 2017-2018 The Dalilcoin developers *)
@@ -40,6 +40,7 @@ let boolconfigvars = [
 ("ltcrpcavoidcurl",fun x -> Config.ltcrpcavoidcurl := x)
 ];;
 let intconfigvars = [
+("waitforblock",fun x -> Config.waitforblock := x);
 ("max_conn_pow_tries",fun x -> Config.max_conn_pow_tries := x);
 ("min_conn_pow_target",fun x -> Config.min_conn_pow_target := Int32.of_int x);
 ("min_conns_pow",fun x -> Config.min_conns_pow := x);
@@ -70,6 +71,8 @@ let atomsofbarsconfigvars = [
 ("defaulttxfee",fun x -> Config.defaulttxfee := x)
 ];;
 let stringoptionconfigvars = [
+("ltcwallet",fun x -> Config.ltcwallet := x);
+("ltcwallet2",fun x -> Config.ltcwallet2 := x);
 ("proxyip",fun x -> Config.proxyip := x);
 ("ip",fun x -> Config.ip := x);
 ("onion",fun x -> Config.onion := x);

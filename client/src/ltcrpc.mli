@@ -1,4 +1,4 @@
-(* Copyright (c) 2021 The Proofgold Lava developers *)
+(* Copyright (c) 2021-2025 The Proofgold Lava developers *)
 (* Copyright (c) 2021 The Proofgold Core developers *)
 (* Copyright (c) 2020 The Proofgold developers *)
 (* Copyright (c) 2017-2018 The Dalilcoin developers *)
@@ -122,6 +122,7 @@ val ltc_cancelswapbuyoffer : string -> unit
 val ltc_createswapoffertx : addr -> int64 -> int64 -> string
 val ltc_unspent : string -> int -> bool
 
+val blnum32 : int32 -> int list
 val blnum64 : int64 -> int list
 
 val broadcast_alert_via_ltc : char -> string -> string
