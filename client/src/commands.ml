@@ -331,6 +331,14 @@ let load_wallet () =
 	Printf.printf "Warning: %s\nIgnoring the rest of the wallet file.\n" x; flush stdout;
 	close_in_noerr s
 
+let setify s =
+  let rec uniq acc = function
+    | x::(y::_ as t) -> uniq (if compare x y = 0 then acc else x :: acc) t
+    | [x] -> List.rev (x :: acc)
+    | [] -> List.rev acc
+  in
+  uniq [] (List.sort compare s);;
+
 let save_wallet () =
   let bkpwalldir =
     let bkpwalldir = Filename.concat (datadir()) "walletbkps" in
@@ -355,47 +363,47 @@ let save_wallet () =
       (fun (k,b,_,_,_,_) ->
 	output_byte s 0;
 	seocf (seo_prod seo_big_int_256 seo_bool seoc (k,b) (s,None)))
-      !walletkeys_staking;
+      (setify !walletkeys_staking);
     List.iter
       (fun (k,b,_,_,_,_) ->
 	output_byte s 4;
 	seocf (seo_prod seo_big_int_256 seo_bool seoc (k,b) (s,None)))
-      !walletkeys_nonstaking;
+      (setify !walletkeys_nonstaking);
     List.iter
       (fun (k,b,_,_,_,_) ->
 	output_byte s 5;
 	seocf (seo_prod seo_big_int_256 seo_bool seoc (k,b) (s,None)))
-      !walletkeys_staking_fresh;
+      (setify !walletkeys_staking_fresh);
     List.iter
       (fun (k,b,_,_,_,_) ->
 	output_byte s 6;
 	seocf (seo_prod seo_big_int_256 seo_bool seoc (k,b) (s,None)))
-      !walletkeys_nonstaking_fresh;
+      (setify !walletkeys_nonstaking_fresh);
     List.iter
       (fun (_,_,scr) ->
 	output_byte s 1;
 	seocf (seo_list seo_int8 seoc scr (s,None)))
-      !walletp2shs;
+      (setify !walletp2shs);
     List.iter
       (fun endors ->
 	output_byte s 2;
 	seocf (seo_prod6 seo_payaddr seo_payaddr (seo_prod seo_big_int_256 seo_big_int_256) seo_varintb seo_bool seo_signat seoc endors (s,None)))
-      !walletendorsements;
+      (setify !walletendorsements);
     List.iter
       (fun watchaddr ->
 	output_byte s 3;
 	seocf (seo_addr seoc watchaddr (s,None)))
-      !walletwatchaddrs;
+      (setify !walletwatchaddrs);
     List.iter
       (fun watchaddr ->
 	output_byte s 7;
 	seocf (seo_addr seoc watchaddr (s,None)))
-      !walletwatchaddrs_offlinekey;
+      (setify !walletwatchaddrs_offlinekey);
     List.iter
       (fun watchaddr ->
 	output_byte s 8;
 	seocf (seo_addr seoc watchaddr (s,None)))
-      !walletwatchaddrs_offlinekey_fresh;
+      (setify !walletwatchaddrs_offlinekey_fresh);
     close_out_noerr s;
     if not (Int64.logand currtm 127L = 0L) then Sys.remove bkpwallfn (* now that the wallet file has successfully updated, delete the backup, except about 1% of the time *)
   with e ->
@@ -440,7 +448,7 @@ let filter_wallet lr =
 	    seocf (seo_prod seo_big_int_256 seo_bool seoc (k,b) (s,None))
           end)
       !walletkeys_staking;
-    walletkeys_staking := !ws;
+    walletkeys_staking := setify !ws;
     List.iter
       (fun ((k,b,_,_,alpha1,_) as x) ->
         try
@@ -457,42 +465,42 @@ let filter_wallet lr =
 	    seocf (seo_prod seo_big_int_256 seo_bool seoc (k,b) (s,None))
           end)
       !walletkeys_nonstaking;
-    walletkeys_nonstaking := !wns;
+    walletkeys_nonstaking := setify !wns;
     List.iter
       (fun (k,b,_,_,_,_) ->
 	output_byte s 5;
 	seocf (seo_prod seo_big_int_256 seo_bool seoc (k,b) (s,None)))
-      !walletkeys_staking_fresh;
+      (setify !walletkeys_staking_fresh);
     List.iter
       (fun (k,b,_,_,_,_) ->
 	output_byte s 6;
 	seocf (seo_prod seo_big_int_256 seo_bool seoc (k,b) (s,None)))
-      !walletkeys_nonstaking_fresh;
+      (setify !walletkeys_nonstaking_fresh);
     List.iter
       (fun (_,_,scr) ->
 	output_byte s 1;
 	seocf (seo_list seo_int8 seoc scr (s,None)))
-      !walletp2shs;
+      (setify !walletp2shs);
     List.iter
       (fun endors ->
 	output_byte s 2;
 	seocf (seo_prod6 seo_payaddr seo_payaddr (seo_prod seo_big_int_256 seo_big_int_256) seo_varintb seo_bool seo_signat seoc endors (s,None)))
-      !walletendorsements;
+      (setify !walletendorsements);
     List.iter
       (fun watchaddr ->
 	output_byte s 3;
 	seocf (seo_addr seoc watchaddr (s,None)))
-      !walletwatchaddrs;
+      (setify !walletwatchaddrs);
     List.iter
       (fun watchaddr ->
 	output_byte s 7;
 	seocf (seo_addr seoc watchaddr (s,None)))
-      !walletwatchaddrs_offlinekey;
+      (setify !walletwatchaddrs_offlinekey);
     List.iter
       (fun watchaddr ->
 	output_byte s 8;
 	seocf (seo_addr seoc watchaddr (s,None)))
-      !walletwatchaddrs_offlinekey_fresh;
+      (setify !walletwatchaddrs_offlinekey_fresh);
     close_out_noerr s
   with e ->
     Utils.log_string (Printf.sprintf "exception during filter_wallet: %s\n" (Printexc.to_string e));
