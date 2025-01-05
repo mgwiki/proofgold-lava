@@ -54,9 +54,15 @@ let era blkh =
   else
     43
 
+let jan2025forkheight = 40000L
+
 (* Calculates the maximum block size for a given block height. *)
 (* the max block size is 500K during era 0 and doubles with each era, with a final max block size of 512M. *)
-let maxblockdeltasize blkh = 500000 lsl (era blkh)
+let maxblockdeltasize blkh =
+  if blkh < jan2025forkheight then
+    500000 lsl (era blkh)
+  else
+    5000000 lsl (era blkh)
 
 (* A flag indicating whether the random number generator has been initialized. *)
 let random_initialized : bool ref = ref false;;
