@@ -1526,7 +1526,7 @@ let rec process_unused_ctrees_2 a c1 c2 =
      end
    | _ -> ()
 
-let ctree_rights_balanced tr ownr rtot1 rtot2 rtot3 outpl =
+let ctree_rights_balanced_prejan2025 tr ownr rtot1 rtot2 rtot3 outpl =
   match ownr with
   | Some(beta,None) -> (*** Owner does not allow right to use. Rights may have been obtained in the past. ***)
       Int64.add rtot1 rtot2 = rtot3
@@ -1537,6 +1537,17 @@ let ctree_rights_balanced tr ownr rtot1 rtot2 rtot3 outpl =
       else
 	true (*** If it's free to use, people are free to use or create rights as they please. ***)
   | None -> false (*** No owner, in this case we shouldn't even be here ***)
+
+let ctree_rights_balanced_postjan2025 tr ownr rtot1 rtot2 rtot3 outpl =
+  match ownr with
+  | Some(_,_) -> true (*** Treating all as free to use post Jan 2025 ***)
+  | None -> false (*** No owner, in this case we shouldn't even be here ***)
+
+let ctree_rights_balanced blkh tr ownr rtot1 rtot2 rtot3 outpl =
+  if blkh < Utils.jan2025forkheight then
+    ctree_rights_balanced_prejan2025 tr ownr rtot1 rtot2 rtot3 outpl
+  else
+    ctree_rights_balanced_postjan2025 tr ownr rtot1 rtot2 rtot3 outpl
 
 let rec hlist_full_approx exp req hl =
   match hl with
@@ -1899,7 +1910,7 @@ let ctree_supports_tx_2 counter strct exp req tht sigt blkh provenl tx aal al tr
     let alpha = hashval_be160 oid in
     let hl = ctree_lookup_addr_assets exp req tr (0,(termaddr_addr alpha)) in
     if hlist_full_approx exp req hl &&
-      ctree_rights_balanced tr (hlist_lookup_obj_owner strct exp req oid hl)
+      ctree_rights_balanced blkh tr (hlist_lookup_obj_owner strct exp req oid hl)
 	(Int64.of_int (count_rights_used usesobjs oid))
 	(rights_out_obj outpl oid)
 	(count_obj_rights al oid)
@@ -1916,7 +1927,7 @@ let ctree_supports_tx_2 counter strct exp req tht sigt blkh provenl tx aal al tr
     let alpha = hashval_be160 pid in
     let hl = ctree_lookup_addr_assets exp req tr (0,(termaddr_addr alpha)) in
     if hlist_full_approx exp req hl &&
-      ctree_rights_balanced tr (hlist_lookup_prop_owner strct exp req pid hl)
+      ctree_rights_balanced blkh tr (hlist_lookup_prop_owner strct exp req pid hl)
 	(Int64.of_int (count_rights_used usesprops pid))
 	(rights_out_prop outpl pid)
 	(count_prop_rights al pid)
