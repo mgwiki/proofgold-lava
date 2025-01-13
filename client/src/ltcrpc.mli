@@ -68,6 +68,7 @@ val ltc_getbestblockhash : unit -> string
 val ltc_getblockheight : string -> int64
 val ltc_getblock : string -> string * int64 * int64 * string list * string option
 val ltc_getburntransactioninfo : string -> int64 * hashval * hashval * string option * int option * string * int
+val ltc_getburntransactioninfo2 : string -> string option
 
 type ltcutxo =
   | LtcP2shSegwit of (string * int * string * string * string * int64)
