@@ -4421,3 +4421,80 @@ let report_bounties_collected oc h =
        )
        bountyat
 
+let stakingreport oc n m =
+  let rh : (string,int) Hashtbl.t = Hashtbl.create 100 in
+  let rbh : (string,int) Hashtbl.t = Hashtbl.create 100 in
+  let lmtml = ref [] in
+  let lmtmdl = ref [] in
+  let ltcaddrname alpha =
+    let al =
+      []
+    in
+    try
+      List.assoc alpha al
+    with Not_found -> alpha
+  in
+  let report () =
+    let rl = ref [] in
+    Hashtbl.iter (fun k i -> rl := (i,k)::!rl) rh;
+    let l = List.sort (fun (i,_) (j,_) -> compare j i) !rl in
+    List.iter
+      (fun (i,alpha) ->
+        Printf.fprintf oc "%d %s (%f%%)\n" i (ltcaddrname alpha) ((100.0 *. float_of_int i) /. float_of_int m))
+      l;
+    rl := [];
+    Printf.fprintf oc "== by num txs confirmed ==\n";
+    let nmtxs = ref 0 in
+    Hashtbl.iter (fun k i -> rl := (i,k)::!rl; nmtxs := !nmtxs + i) rbh;
+    let l = List.sort (fun (i,_) (j,_) -> compare j i) !rl in
+    List.iter
+      (fun (i,alpha) ->
+        Printf.fprintf oc "%d %s (%f%%)\n" i (ltcaddrname alpha) ((100.0 *. float_of_int i) /. float_of_int !nmtxs))
+      l;
+    let prev = ref None in
+    List.iter (fun m -> (match !prev with None -> () | Some(n) -> lmtmdl := m -. n :: !lmtmdl); prev := Some(m)) !lmtml;
+    Printf.fprintf oc "avg block times %f\n" (List.fold_left (fun x y -> x +. y) 0.0 !lmtmdl /. float_of_int (List.length !lmtmdl));
+  in
+  let rec stakingreport_r lbk ltx m =
+    if m > 0 then
+      begin
+        let (pbh,lmtm,_,_,par,_,blkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
+        (*        Printf.fprintf oc "%s %s -> %s\n" (hashval_hexstring lbk) (hashval_hexstring ltx) (hashval_hexstring pbh); (* delete *) *)
+        lmtml := Int64.to_float lmtm::!lmtml;
+        match par with
+        | None -> report()
+        | Some(lbk2,ltx2) ->
+           match ltc_getburntransactioninfo2 (string_hexstring (Be256.to_string ltx)) with
+           | None ->
+              stakingreport_r lbk2 ltx2 (m-1)
+           | Some(alpha) ->
+              begin
+                (*                Printf.fprintf oc "%Ld %s\n" (Int64.add blkh (-1L)) (ltcaddrname alpha); *)
+                try
+                  Hashtbl.replace rh alpha (Hashtbl.find rh alpha + 1)
+                with Not_found ->
+                  Hashtbl.replace rh alpha 1
+              end;
+              begin
+                try
+                  let bd = Block.DbBlockDelta.dbget pbh in
+                  let ntxs = List.length bd.blockdelta_stxl in
+                  if ntxs > 0 then
+                    begin
+                      try
+                        Hashtbl.replace rbh alpha (Hashtbl.find rbh alpha + ntxs)
+                      with Not_found ->
+                        Hashtbl.replace rbh alpha ntxs
+                    end
+                with Not_found ->
+                  ()
+              end;
+              stakingreport_r lbk2 ltx2 (m-1)
+      end
+    else
+      report()
+  in
+  match n with
+  | Some(_,lbk,ltx) ->
+     stakingreport_r lbk ltx m
+  | None -> ()
