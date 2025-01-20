@@ -4498,3 +4498,62 @@ let stakingreport oc n m =
   | Some(_,lbk,ltx) ->
      stakingreport_r lbk ltx m
   | None -> ()
+
+let chaingraph () =
+  let t = ref [] in
+  let iterk k =
+    let (bhd,bhs) = DbBlockHeader.dbget k in
+    match bhd.prevblockhash with
+    | None -> ()
+    | Some (ph, Poburn(_,ltxh,_,_,_,_)) ->
+       let time = bhd.timestamp in
+       let pbh = hashval_hexstring ph in
+       let cbh = hashval_hexstring k in
+       t := (cbh, pbh, time, ltxh) :: !t
+  in
+  DbBlockHeader.dbkeyiter iterk;
+  let t = List.sort (fun (_, _, t1, _) (_, _, t2, _) -> compare t2 t1) !t in
+
+  let nodes_by_time =
+    List.fold_left
+      (fun acc (input, output, time, _) ->
+         let update_table table key t =
+           let nodes =
+             try Hashtbl.find table t with Not_found -> []
+           in
+           if not (List.mem key nodes) then Hashtbl.replace table t (key :: nodes)
+         in
+         update_table acc input time;
+         acc)
+      (Hashtbl.create 10)
+      t
+  in
+
+  let oc = open_out "graph.dot" in
+  Printf.fprintf oc "digraph G {\n  rankdir=TB;\n";
+
+  let times =
+    Hashtbl.fold (fun time _ acc -> time :: acc) nodes_by_time []
+    |> List.sort (fun a b -> compare b a)
+  in
+
+  List.iter (fun (cbh, pbh, time, ltxh) ->
+      Printf.fprintf oc "  \"%s\" [label=\"%s\"];\n" cbh (String.sub cbh 0 5);
+      Printf.fprintf oc "  \"%s\" -> \"%s\";\n" cbh pbh
+  ) t;
+
+  let rec add_time_edges = function
+    | [] | [_] -> ()
+    | t1 :: (t2 :: _ as rest) ->
+        let nodes_t1 = Hashtbl.find nodes_by_time t1 in
+        let nodes_t2 = Hashtbl.find nodes_by_time t2 in
+        List.iter
+          (fun n1 -> List.iter (fun n2 -> Printf.fprintf oc "  \"%s\" -> \"%s\" [style=invis];\n" n1 n2) nodes_t2)
+          nodes_t1;
+        add_time_edges rest
+  in
+  add_time_edges times;
+
+  Printf.fprintf oc "}\n";
+  close_out oc
+;;
