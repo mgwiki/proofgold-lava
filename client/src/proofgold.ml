@@ -6917,6 +6917,14 @@ let initialize_commands () =
         with Not_found ->
           Printf.fprintf oc "Do not have private key for stake address in wallet.\n"
       end);
+  ac "stakingreport" "stakingreport [<n>]" "Print info about staking."
+    (fun oc al ->
+      match al with
+      | [] -> Commands.stakingreport oc (get_bestblock_print_warnings oc) 100
+      | [n] ->
+         let n = int_of_string n in
+         Commands.stakingreport oc (get_bestblock_print_warnings oc) n
+      | _ -> raise BadCommandForm);
   ac "blockchain" "blockchain [<n>]" "Print the blockchain up to the most recent <n> blocks, with a default of 1000 blocks."
     (fun oc al ->
       match al with
