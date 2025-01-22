@@ -5858,7 +5858,7 @@ let initialize_commands () =
 	  [alpha;beta;tmlock] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,big_int_hashval (strong_rand_256()),false)
 	| [alpha;beta;tmlock;"absolute"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,big_int_hashval (strong_rand_256()),false)
 	| [alpha;beta;tmlock;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,big_int_hashval (strong_rand_256()),false)
-	| [alpha;beta;tmlock;secr] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,hexstring_hashval secr,false)
+	| [alpha;beta;tmlock;secr] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,hexstring_hashval secr,false)
 	| [alpha;beta;tmlock;"absolute";"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,big_int_hashval (strong_rand_256()),true)
 	| [alpha;beta;tmlock;secr;"absolute"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,false,hexstring_hashval secr,false)
 	| [alpha;beta;tmlock;secr;"json"] -> (alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock,true,hexstring_hashval secr,true)
