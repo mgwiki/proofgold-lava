@@ -110,6 +110,8 @@ val createhtlc : Be160.t -> Be160.t -> int32 -> bool -> hashval -> p2shaddr * in
 val createbtchtlc2 : Be160.t -> Be160.t -> int -> bool -> hashval -> p2shaddr * int list * hashval
 val createbtchtlc : Be160.t -> Be160.t -> int -> bool -> hashval -> p2shaddr * int list * hashval
 val createptlc : Be160.t -> Be160.t -> int32 -> bool -> hashval -> p2shaddr * int list
+val createhtlcptlc2 : Be160.t -> Be160.t -> Be160.t -> int32 -> int32 -> hashval -> hashval -> p2shaddr * int list * hashval
+val createhtlcptlc : Be160.t -> Be160.t -> Be160.t -> int32 -> int32 -> hashval -> hashval -> p2shaddr * int list * hashval
 val createmultisig2 : int -> (string * ((Z.t * Z.t) * bool)) list -> p2shaddr * int list
 val createmultisig : int -> jsonval -> p2shaddr * int list
 val extract_secret_from_btctx : hashval -> int -> string -> hashval

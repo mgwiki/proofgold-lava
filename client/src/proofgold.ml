@@ -6104,6 +6104,47 @@ let initialize_commands () =
 	  Printf.fprintf oc "\n";
 	  Printf.fprintf oc "Propid: %s\n" (hashval_hexstring pid);
 	end);
+  ac "createhtlcptlc" "createhtlcptlc <p2pkhaddr:delta> <p2pkhaddr:alpha> <p2pkhaddr:beta> <htlcrelativetimelock> <propabsolutetimelock> <propid> [<secret>] [json]"
+    "Create hash timelock contract script combined with a prop timelock contract and address.\nThe controller of address delta can spend with the secret.\nWithout the secret after <htlcrelativetimelock> blocks have passed,\n the script behaves like a ptlc script\nwith alpha able to spend if the proposition is proven\nand beta able to spend after <propabsolutetimelock> is reached.\nThe controller of address delta should call this command and keep the secret unless revoking.\nA hex 32 byte secret can optionally be given, otherwise one will be randomly generated."
+    (fun oc al ->
+      let (deltas,delta,alphas,alpha,betas,beta,tmlock1,tmlock2,propid,secr,jb) =
+	match al with
+	  [delta;alpha;beta;tmlock1;tmlock2;propid] -> (delta,pfgaddrstr_addr delta,alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock1,Int32.of_string tmlock2,hexstring_hashval propid,big_int_hashval (strong_rand_256()),false)
+	| [delta;alpha;beta;tmlock1;tmlock2;propid;"json"] -> (delta,pfgaddrstr_addr delta,alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock1,Int32.of_string tmlock2,hexstring_hashval propid,big_int_hashval (strong_rand_256()),true)
+	| [delta;alpha;beta;tmlock1;tmlock2;propid;secr] -> (delta,pfgaddrstr_addr delta,alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock1,Int32.of_string tmlock2,hexstring_hashval propid,hexstring_hashval secr,false)
+	| [delta;alpha;beta;tmlock1;tmlock2;propid;secr;"json"] -> (delta,pfgaddrstr_addr delta,alpha,pfgaddrstr_addr alpha,beta,pfgaddrstr_addr beta,Int32.of_string tmlock1,Int32.of_string tmlock2,hexstring_hashval propid,hexstring_hashval secr,true)
+	| _ -> raise BadCommandForm
+      in
+      if not (p2pkhaddr_p delta) then raise (Failure (Printf.sprintf "%s is not a p2pkh address" deltas));
+      if not (p2pkhaddr_p alpha) then raise (Failure (Printf.sprintf "%s is not a p2pkh address" alphas));
+      if not (p2pkhaddr_p beta) then raise (Failure (Printf.sprintf "%s is not a p2pkh address" betas));
+      if tmlock1 < 1l then raise (Failure ("locktime must be positive"));
+      if tmlock1 >= 500000000l then raise (Failure ("lock time must be given in number of blocks"));
+      if tmlock2 < 1l then raise (Failure ("locktime must be positive"));
+      let (_,dv) = delta in
+      let (_,av) = alpha in
+      let (_,bv) = beta in
+      let (gamma,scrl,secrh) = Commands.createhtlcptlc dv av bv tmlock1 tmlock2 propid secr in
+      if jb then
+	begin
+	  let redscr = Buffer.create 10 in
+	  List.iter (fun x -> Buffer.add_string redscr (Printf.sprintf "%02x" x)) scrl;
+	  let jol = [("address",JsonStr(addr_pfgaddrstr (p2shaddr_addr gamma)));
+		     ("redeemscript",JsonStr(Buffer.contents redscr));
+		     ("secret",JsonStr(hashval_hexstring secr));
+		     ("hashofsecret",JsonStr(hashval_hexstring secrh))]
+	  in
+	  print_jsonval oc (JsonObj(jol))
+	end
+      else
+	begin
+	  Printf.fprintf oc "P2sh address: %s\n" (addr_pfgaddrstr (p2shaddr_addr gamma));
+	  Printf.fprintf oc "Redeem script: ";
+	  List.iter (fun x -> Printf.fprintf oc "%02x" x) scrl;
+	  Printf.fprintf oc "\n";
+	  Printf.fprintf oc "Secret: %s\n" (hashval_hexstring secr);
+	  Printf.fprintf oc "Hash of secret: %s\n" (hashval_hexstring secrh)
+	end);
   ac "verifycommitmenttx" "verifycommitmenttx alpha beta fundaddress fundid1 fundid2 alphaamt betaamt secrethash tmlock tx [json]"
     "Verify a commitment tx"
     (fun oc al ->
