@@ -16,6 +16,11 @@ include 'i/search.php';
        <td><table><tr><th>previous</th></tr><tr><td><?= isset($v->prevblock) ? ablock($v->prevblock->block, $v->height - 1) : "-" ?></td></tr></table></td>
     <td><table><tr><th>stake address</th></tr><tr><td>
       <?= isset($v->stakeassetid) ? abbrvaddrasset($v->stakeaddress, $v->stakeassetid) : "Pure Burn " . abbrvaddr($v->stakeaddress) ?>
+<br/>
+          <?= isset($v->prevblock) ? (
+ "<a href=\"https://blockchair.com/litecoin/transaction/" . $v->prevblock->ltcburntx . "\">LBT:" . substr($v->prevblock->ltcburntx, 0, 5) . "</a>") : "-" ?>
+
+                                                                    
     </td></tr></table></td>
   </tr>
   <tr>
