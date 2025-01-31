@@ -21,11 +21,11 @@ function pgport($fnctn, $port, $loginpass) {
 }
 
 function pg($fnctn) {
-    return pgport($fnctn, 21810, "password");
+    return pgport($fnctn, 21810, "user\npassword");
 }
 
 function pgopen($fnctn) {
-    return pgport($fnctn, 21818, "password");
+    return pgport($fnctn, 21818, "user\npassword");
 }
 
 function pgj($fnctn) {
@@ -126,7 +126,7 @@ function anchor ($name) {
     return '<a name="' . $name . '"/>';
 }
 
-function doc($dc) {
+function doc($dc,$docaddr) {
     if (!(isset ($dc->defaultnames))) {
         $dc->defaultnames = [];
     }
@@ -139,7 +139,7 @@ function doc($dc) {
         $output .= ($dc->def);
     } else if($dc->docitemcase == 'docpfof') {
         $output .= anchor($dc->propid) . "Theorem " . nameordefault($dc->propid,$dc->defaultnames) . " : ";
-        $output .= ($dc->prop . " (proof not displayed)");
+        $output .= ($dc->prop . " <a href=\"sp.php?pu=" . $docaddr . "&it=" . $dc->propid . "\">(proof)</a>");
     } else if ($dc->docitemcase == 'docparam') {
         $output .= anchor($dc->objid) . "Param " . nameordefault($dc->objid,$dc->defaultnames) . " : ";
         $output .= ($dc->stp);
@@ -155,18 +155,38 @@ function doc($dc) {
 }
 
 function thyspec($dc) {
-    if (!(isset ($dc->defaultnames))) {
-        $dc->defaultnames = [];
-    }
     $output = '';
     if($dc->theoryitemcase == 'thyaxiom') {
         $output .= "Axiom " . nameordefault($dc->propid, $dc->defaultnames) . " : " . $dc->prop;
     } else if($dc->theoryitemcase == 'thyprim') {
-        $output .= "Prim " . nameordefault($dc->objid, ["Prim" . $dc->primnum]) . " : " . $dc->stp;
+        $output .= "Prim " .
+                ((isset($dc->defaultnames) && $dc->defaultnames != []) ?
+                abbrvname($dc->objid, $dc->defaultnames[0]) :
+                 (abbrvname($dc->objid, $dc->primnum) . "/" . abbrvop($dc->objid))) . 
+                " : " . $dc->stp;
     } else if($dc->theoryitemcase == 'thydef') {
         $output .= "Def " . nameordefault($dc->objid, $dc->defaultnames) . " : " . $dc->stp . " := " . $dc->def;
     } else {
         $output .= "Unknown Thyitemcase " . $dc->theoryitemcase;
+        var_export($dc);
+    }
+    $output .= "<br/>";
+    return $output;
+}
+
+
+function signaspec($dc) {
+    $output = '';
+    if($dc->signaitemcase == 'signaknown') {
+        $output .= "Known " . abbrvop($dc->propid) . " : " . $dc->prop;
+    } else if($dc->signaitemcase == 'signaparam') {
+        $output .= "Param " . abbrvop($dc->objid) . " : " . $dc->stp;
+    } else if($dc->signaitemcase == 'signasigna') {
+        $output .= "Import Signature " . abbrv($dc->signaroot);
+    } else if($dc->signaitemcase == 'signadef') {
+        $output .= "Def " . abbrvop($dc->objid) . " : " . $dc->stp . " := " . $dc->def;
+    } else {
+        $output .= "Unknown Signaitemcase " . $dc->signaitemcase;
         var_export($dc);
     }
     $output .= "<br/>";
@@ -184,32 +204,52 @@ function preasset($v) {
         // objaddr ignored
         $output .= "ownership of " . abbrv($vp->objid) . " as obj with payaddr " . abbrvaddr($vp->owneraddress);
         if (isset($vp->royalty)) {
-            $output .= " rightscost " . number_format($vp->royalty->bars, 2);
+            if ($vp->royalty->atoms == 0) {
+                $output .= " rights free";
+            } else {
+                $output .= " rightscost " . number_format($vp->royalty->bars, 2);
+            }
         } else {
             $output .= " no rights";
         }
     } else if ($vp->preassettype == 'ownsprop') {
         $output .= "ownership of " . abbrv($vp->propid) . " as prop with payaddr " . abbrv($vp->owneraddress);
         if (isset($vp->royalty)) {
-            $output .= " rightscost " . number_format($vp->royalty->bars, 2);
+            if ($vp->royalty->atoms == 0) {
+                $output .= " rights free";
+            } else {
+                $output .= " rightscost " . number_format($vp->royalty->bars, 2);
+            }
         } else {
             $output .= " no rights";
         }
     } else if ($vp->preassettype == 'ownsnegprop') {
         $output .= "negprop ownership";
-    } else if (($vp->preassettype == 'rightsobj') || ($vp->preassettype == 'marker') || ($vp->preassettype == 'rightsprop')) {
+    } else if ($vp->preassettype == 'rightsobj') {
+            $output .= " rights obj " . abbrvop($vp->objid) . " units " . $vp->units;
+    } else if ($vp->preassettype == 'rightsprop') {
+            $output .= " rights prop " . abbrvop($vp->propid) . " units " . $vp->units;
+    } else if ($vp->preassettype == 'marker') {
         $output .= $vp->preassettype;
     } else if ($vp->preassettype == 'doc') {
         $output .= "doc published by " . abbrvaddr($vp->publisher) . "<div align=left>";
         $doccount = count($vp->doc); // foreach but reversed
+        $docaddr = isset($v->address) ? $v->address : $_GET["b"];
         while ($doccount) {
-            $output .= doc($vp->doc[--$doccount]);
+            $output .= doc($vp->doc[--$doccount],$docaddr);
         }
         $output .= "</div>";
     } else if ($vp->preassettype == 'theoryspec') {
         $output .= "theory published by " . abbrvaddr($vp->publisher) . "<div align=left>";
         foreach ($vp->theoryspec as $vt) {
             $output .= thyspec($vt);
+        }
+        $output .= "</div>";
+    } else if ($vp->preassettype == 'signaspec') {
+        $output .= "signature published by " . abbrvaddr($vp->publisher) . "<div align=left>";
+        $count = count($vp->signaspec);
+        while ($count) {
+            $output .= signaspec($vp->signaspec[--$count]);
         }
         $output .= "</div>";
     } else {
