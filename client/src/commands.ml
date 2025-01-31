@@ -1932,6 +1932,74 @@ let simple_ptlc_script bl stk =
       end
   | _ -> raise Not_found
 
+let simple_htlcptlc_script bl stk =
+  if not (stk = []) then raise Not_found; (** assume there is no partial signature yet, for simplicity **)
+  match bl with
+  | (0x63::0x82::0x01::0x20::0x88::0xa8::0x20::br) -> (*** 32 bytes ***)
+      begin
+	try
+	  let (secrhbl,br) = next_bytes 32 br in
+	  match br with
+	  | (0x88::0x76::0xa9::0x14::br) ->
+	      begin
+		try
+		  let (deltabl,br) = next_bytes 20 br in
+		  match br with
+		  | (0x67::0x04::br) ->
+		      begin
+			try
+			  let (locktm1bl,br) = next_bytes 4 br in
+			  match br with
+			  | (0xb2::0x75::0x63::0x20::br) ->
+			      begin
+				try
+	                          let (pidbl,br) = next_bytes 32 br in
+	                          match br with
+	                          | (0xb5::0x75::0x76::0xa9::0x14::br) ->
+	                             begin
+		                       try
+		                         let (alphabl,br) = next_bytes 20 br in
+		                         match br with
+		                         | (0x67::0x04::br) ->
+		                            begin
+			                      try
+			                        let (locktm2bl,br) = next_bytes 4 br in
+			                        match br with
+			                        | (0xb1::0x75::0x76::0xa9::0x14::br) ->
+			                           begin
+				                     try
+				                       let (betabl,br) = next_bytes 20 br in
+				                       if br = [0x68;0x68;0x88;0xac] then
+				                         (bytelist_be160 deltabl,
+				                          bytelist_be160 alphabl,
+				                          bytelist_be160 betabl,
+				                          int64_of_big_int (inum_le locktm1bl),
+				                          int64_of_big_int (inum_le locktm2bl),
+                                                          bytelist_be256 pidbl,
+                                                          bytelist_be256 secrhbl)
+				                       else
+				                         raise Not_found
+				                     with _ -> raise Not_found
+			                           end
+			                        | _ -> raise Not_found
+			                      with _ -> raise Not_found
+		                            end
+		                         | _ -> raise Not_found
+		                       with _ -> raise Not_found
+	                             end
+	                          | _ -> raise Not_found
+	                        with _ -> raise Not_found
+                              end
+	                with _ -> raise Not_found
+		      end
+		  | _ -> raise Not_found
+		with _ -> raise Not_found
+	      end
+	  | _ -> raise Not_found
+	with _ -> raise Not_found
+      end
+  | _ -> raise Not_found
+
 let simple_veto_script bl stk =
   if not (stk = []) then raise Not_found; (** assume there is no partial signature yet, for simplicity **)
   match bl with
@@ -2189,7 +2257,46 @@ let signtx_p2sh_partialsig_2 secrl kl beta taue psig bl stk =
 	             | _ -> raise Not_found
                    with Not_found -> raise Not_found
               with Not_found ->
-	        raise (Failure "unhandled signtx_p2sh case")	    
+                try
+	          let (delta,alpha,beta,locktm1,locktm2,pid,secrh) = simple_htlcptlc_script bl stk in (* three cases: we know the secret and the key for delta (and sign with them), we have the key for alpha (and we sign assuming the prop with propid has been proven even before locktm1 is reached), or we have the key for beta (allowing signing before locktm1 and locktm2 are reached) *)
+	          try
+	            let (secr,_) = List.find (fun (secr1,secr1h) -> secrh = secr1h) secrl in
+	            let v = signtx_p2pkh kl delta taue in
+	            match v with
+	            | P2pkhSignat(Some(x,y),b,(r,s)) ->
+	               let pubkeybytes = pubkey_bytelist (x,y) b in
+	               let secrbytes = be256_bytelist secr in
+	               let sscr = (*** signature script PUSH (0,r,s) PUSH pubkey PUSH secret PUSH 1 (for IF) PUSH bl ***)
+		         push_bytes (0::blnum_be r 32 @ blnum_be s 32) @ push_bytes pubkeybytes @ push_bytes secrbytes @ 0x51::push_bytes bl
+	               in
+	               (P2shSignat(sscr),true)
+	            | _ -> raise Not_found
+	          with Not_found ->
+                        try
+	                  let v = signtx_p2pkh kl alpha taue in
+	                  match v with
+	                  | P2pkhSignat(Some(x,y),b,(r,s)) ->
+	                     let pubkeybytes = pubkey_bytelist (x,y) b in
+	                     let sscr = (*** signature script PUSH (0,r,s) PUSH pubkey PUSH 1 (for IF) PUSH bl ***)
+		               push_bytes (0::blnum_be r 32 @ blnum_be s 32) @ push_bytes pubkeybytes @ 0x51::0::push_bytes bl
+	                     in
+	                     (P2shSignat(sscr),true)
+	                  | _ -> raise Not_found
+                        with
+                        | Not_found ->
+                           try
+                             let v = signtx_p2pkh kl beta taue in
+	                     match v with
+	                     | P2pkhSignat(Some(x,y),b,(r,s)) ->
+	                        let pubkeybytes = pubkey_bytelist (x,y) b in
+	                        let sscr = (*** signature script PUSH (0,r,s) PUSH pubkey PUSH 0 (for ELSE) PUSH bl ***)
+		                  push_bytes (0::blnum_be r 32 @ blnum_be s 32) @ push_bytes pubkeybytes @ 0::0::push_bytes bl
+	                        in
+	                        (P2shSignat(sscr),true)
+	                     | _ -> raise Not_found
+                           with Not_found -> raise Not_found
+                with Not_found ->
+	          raise (Failure "unhandled signtx_p2sh case")	    
 
 let signtx_p2sh_partialsig secrl kl beta taue psig =
   let stk = script_stack psig [] in
@@ -4125,6 +4232,56 @@ let createptlc alpha beta tmlock rel pid =
   in
   let alpha = Script.hash160_bytelist scrl in
   (alpha,scrl)
+
+let createhtlcptlc2 delta alpha beta tmlock1 tmlock2 pid secrh =
+  let scrl =
+    [0x63; (** OP_IF **)
+     0x82; (** OP_SIZE **)
+     0x01;0x20; (** PUSH 0x20 (32) **)
+     0x88; (** OP_EQUALVERIFY to make sure the secret is 32 bytes **)
+     0xa8; (** OP_SHA256 **)
+     0x20] (** PUSH 32 bytes (the hash of the secret) onto the stack **)
+    @ be256_bytelist secrh
+    @ [0x88; (** OP_EQUALVERIFY to ensure the secret hashes to the expected hash **)
+       0x76; (** OP_DUP -- duplicate the given pubkey for alpha **)
+       0xa9; (** OP_HASH160 -- hash the given pubkey **)
+       0x14] (** PUSH 20 bytes (should be hash of pubkey for alpha) onto the stack **)
+    @ be160_bytelist delta
+    @ [0x67; (** OP_ELSE **)
+       0x04] (** PUSH 4 byte onto the stack (lock time) **)
+    @ blnum_le (big_int_of_int32 tmlock1) 4
+    @ [0xb2; (** CSV -- always relative block time here **)
+       0x75] (** OP_DROP, drop the locktime from the stack **)
+    @ (** now switch to ptlc **)
+      [0x63; (** OP_IF **)
+       0x20] (** PUSH 32 bytes (the propid) onto the stack **)
+    @ be256_bytelist pid
+    @ [0xb5; (** OP_PROVEN to make sure the prop with the propid has been proven **)
+       0x75; (** OP_DROP to pop the propid off the stack **)
+       0x76; (** OP_DUP -- duplicate the given pubkey for alpha **)
+       0xa9; (** OP_HASH160 -- hash the given pubkey **)
+       0x14] (** PUSH 20 bytes (should be hash of pubkey for alpha) onto the stack **)
+    @ be160_bytelist alpha
+    @ [0x67; (** OP_ELSE **)
+       0x04] (** PUSH 4 bytes onto the stack (lock time) **)
+    @ blnum_le (big_int_of_int32 tmlock2) 4
+    @ [0xb1; (** CLTV ; always absolute here **)
+       0x75; (** OP_DROP, drop the locktime from the stack **)
+       0x76; (** OP_DUP -- duplicate the given pubkey for beta **)
+       0xa9; (** OP_HASH160 -- hash the given pubkey **)
+       0x14] (** PUSH 20 bytes (should be hash of pubkey for beta) onto the stack **)
+    @ be160_bytelist beta
+    @ [0x68; (** OP_ENDIF (for ptlc) **)
+       0x68; (** OP_ENDIF (for htlc) **)
+       0x88; (** OP_EQUALVERIFY -- to ensure the given pubkey hashes to the right value **)
+       0xac] (** OP_CHECKSIG **)
+  in
+  let alpha = Script.hash160_bytelist scrl in
+  (alpha,scrl,secrh)
+
+let createhtlcptlc delta alpha beta tmlock1 tmlock2 pid secr =
+  let secrh = sha256_bytelist (be256_bytelist secr) in
+  createhtlcptlc2 delta alpha beta tmlock1 tmlock2 pid secrh
 
 let createmultisig2 m pubkeys =
   let n = List.length pubkeys in
