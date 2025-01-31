@@ -7,6 +7,6 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 let clientdescr = "Proofgold Lava"
-let clientversion = "0.2.9.2pre"
+let clientversion = "0.3.0"
 let useragent = clientdescr ^ " " ^ clientversion
 let protocolversion = 1l

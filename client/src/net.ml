@@ -258,7 +258,7 @@ let myaddr () =
               onionaddr ^ ":" ^ (string_of_int !Config.onionremoteport)
 
 let fallbacknodes = [
-(* ":21805" *)
+  "138.232.18.221:20808"
 ]
 
 let testnetfallbacknodes = [
