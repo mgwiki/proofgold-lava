@@ -1,31 +1,33 @@
 {"name": "Bounties", "children" : [
-    {"name": "Open", "size": 1082, "children" : [
+    {"name": "Open", "size": 1112, "children" : [
 
-        {"name":"Mizar", "size": 1427},
-        {"name":"Random AIM", "size": 1184},
-        {"name":"Surreal", "size": 1109},
+        {"name":"Mizar", "size": 2688},
+        {"name":"Random AIM", "size": 1170},
+        {"name":"Surreal", "size": 1004},
         {"name":"OEIS", "size": 1000},
         {"name":"AbstrHF", "size": 622},
-        {"name":"DiophantineMod", "size": 612},
-        {"name":"Diophantine", "size": 519},
+        {"name":"DiophantineMod", "size": 593},
+        {"name":"Diophantine", "size": 513},
         {"name":"CombUnif", "size": 327},
-        {"name":"CatStruct", "size": 301},
         {"name":"QBF", "size": 290},
+        {"name":"CatStruct", "size": 270},
         {"name":"HOSetConstr", "size": 269},
         {"name":"Random123", "size": 244},
         {"name":"HOUnif", "size": 135},
         {"name":"Ramsey", "size": 65},
+        {"name":"Fermat", "size": 2},
         {"name":"Preamble", "size": 1},
         {"name":"CatSet", "size": 1}
-
-    ]},{"name": "Collected", "size": 1268, "children" : [
+    ]},{"name": "Collected", "size": 1502, "children" : [
 
         {"name":"Random123", "size": 800},
-        {"name":"CatStruct", "size": 118},
+        {"name":"CatStruct", "size": 149},
+        {"name":"Random AIM", "size": 114},
+        {"name":"Surreal", "size": 106},
         {"name":"Ramsey", "size": 101},
         {"name":"CatSet", "size": 28},
+        {"name":"DiophantineMod", "size": 19},
         {"name":"Mizar", "size": 9},
-        {"name":"Form100", "size": 2},
-        {"name":"Surreal", "size": 1}
-
+        {"name":"Diophantine", "size": 6},
+        {"name":"Form100", "size": 2}
     ]}]}
