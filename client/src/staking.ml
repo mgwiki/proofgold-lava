@@ -599,6 +599,7 @@ let stakingthread () =
 					              dync := c;
 					              rembytesestimate := !rembytesestimate - bytesestimate
 					            with MaxAssetsAtAddress ->
+                                                      log_string "Max Assets as Address\n";
                                                       counter := counter1
 					          end
 				                else
@@ -1074,6 +1075,7 @@ let stakingthread () =
 						      dync := c;
 						      rembytesestimate := !rembytesestimate - bytesestimate
 					            with MaxAssetsAtAddress ->
+                                                      log_string "Max Assets as Address\n";
                                                       counter := counter1
 					          end
 					        else
