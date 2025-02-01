@@ -115,6 +115,9 @@ For a full list of available commands use the command `help`.
 Proofgold can also be run as a daemon using `proofgold -daemon`
 and then RPC commands can be issued via `proofgoldcli`.
 
+If you run proofgold under the tails linux distribution, you may
+want to consider running it under `torify`.
+
 * Staking
 
 Proofgold blocks are created by burning litecoins, possibly in
