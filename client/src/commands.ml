@@ -4659,16 +4659,19 @@ let stakingreport oc n m =
 let chaingraph () =
   let t = ref [] in
   let iterk k =
-    let (bhd,bhs) = DbBlockHeader.dbget k in
-    match bhd.prevblockhash with
-    | None -> ()
-    | Some (ph, Poburn(_,ltxh,_,_,_,_)) ->
-       let time = bhd.timestamp in
-       let pbh = hashval_hexstring ph in
-       let cbh = hashval_hexstring k in
-       t := (cbh, pbh, time, ltxh) :: !t
+    let (blk,ltime,_,utxo,_,_,height) = Db_outlinevals.dbget k in
+    try
+      let (bhd,bhs) = DbBlockHeader.dbget blk in
+      match bhd.prevblockhash with
+      | None -> ()
+      | Some (ph, Poburn(_,ltxh,_,_,_,_)) ->
+         let pbh = hashval_hexstring ph in
+         let cbh = hashval_hexstring blk in
+         t := (cbh, pbh, ltime, ltxh) :: !t
+
+    with Not_found -> ()
   in
-  DbBlockHeader.dbkeyiter iterk;
+  Db_outlinevals.dbkeyiter iterk;
   let t = List.sort (fun (_, _, t1, _) (_, _, t2, _) -> compare t2 t1) !t in
 
   let nodes_by_time =
