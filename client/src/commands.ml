@@ -4662,12 +4662,15 @@ let chaingraph () =
     let (blk,ltime,_,utxo,_,_,height) = Db_outlinevals.dbget k in
     try
       let (bhd,bhs) = DbBlockHeader.dbget blk in
+      let bd = Block.DbBlockDelta.dbget blk in
+      let ntxs = List.length bd.blockdelta_stxl in
+
       match bhd.prevblockhash with
       | None -> ()
-      | Some (ph, Poburn(_,ltxh,_,_,_,_)) ->
-         let pbh = hashval_hexstring ph in
+      | Some (ph, _) ->
          let cbh = hashval_hexstring blk in
-         t := (cbh, pbh, ltime, ltxh) :: !t
+         let pbh = hashval_hexstring ph in
+         t := (cbh, pbh, ltime, ntxs) :: !t
 
     with Not_found -> ()
   in
@@ -4676,7 +4679,7 @@ let chaingraph () =
 
   let nodes_by_time =
     List.fold_left
-      (fun acc (input, output, time, _) ->
+      (fun acc (input, _, time, _) ->
          let update_table table key t =
            let nodes =
              try Hashtbl.find table t with Not_found -> []
@@ -4697,8 +4700,8 @@ let chaingraph () =
     |> List.sort (fun a b -> compare b a)
   in
 
-  List.iter (fun (cbh, pbh, time, ltxh) ->
-      Printf.fprintf oc "  \"%s\" [label=\"%s\"];\n" cbh (String.sub cbh 0 5);
+  List.iter (fun (cbh, pbh, time, ntxs) ->
+      Printf.fprintf oc "  \"%s\" [label=\"%s\"%s];\n" cbh (String.sub cbh 0 5) (if ntxs > 0 then ",style=filled,fillcolor=blue" else "");
       Printf.fprintf oc "  \"%s\" -> \"%s\";\n" cbh pbh
   ) t;
 
