@@ -33,6 +33,7 @@ module Db_outlinevals :
       val dbexists : hashval -> bool
       val dbput : hashval -> hashval * int64 * int64 * (hashval * int32) * (hashval * hashval) option * hashval * int64 -> unit
       val dbdelete : hashval -> unit
+      val dbkeyiter : (hashval -> unit) -> unit
     end
 
 module Db_validheadervals :
