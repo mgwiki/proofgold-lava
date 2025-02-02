@@ -4657,24 +4657,43 @@ let stakingreport oc n m =
      stakingreport_r lbk ltx m
   | None -> ()
 
-let chaingraph () =
+let chaingraph minh =
+  let minh = Int64.of_int minh in
   let t = ref [] in
   let iterk k =
-    let (bhd,bhs) = DbBlockHeader.dbget k in
-    match bhd.prevblockhash with
-    | None -> ()
-    | Some (ph, Poburn(_,ltxh,_,_,_,_)) ->
-       let time = bhd.timestamp in
-       let pbh = hashval_hexstring ph in
-       let cbh = hashval_hexstring k in
-       t := (cbh, pbh, time, ltxh) :: !t
+    let (blk,ltime,_,utxo,_,_,height) = Db_outlinevals.dbget k in
+    if height >= minh then
+      try
+        let (bhd,bhs) = DbBlockHeader.dbget blk in
+        let ntxs =
+          try
+            let bd = Block.DbBlockDelta.dbget blk in
+            List.length bd.blockdelta_stxl
+          with Not_found -> -1
+        in
+        let color =
+          if Db.DbBlacklist.dbexists blk then "brown" else
+          if DbInvalidatedBlocks.dbexists blk then "red" else
+          if ntxs = -1 then "yellow" else
+          if ntxs > 0 then "blue" else ""
+        in
+
+        match bhd.prevblockhash with
+        | None -> ()
+        | Some (ph, _) ->
+           let cbh = hashval_hexstring blk in
+           let pbh = hashval_hexstring ph in
+           t := (cbh, pbh, ltime, color) :: !t
+
+      with Not_found -> ()
+    else ()
   in
-  DbBlockHeader.dbkeyiter iterk;
+  Db_outlinevals.dbkeyiter iterk;
   let t = List.sort (fun (_, _, t1, _) (_, _, t2, _) -> compare t2 t1) !t in
 
   let nodes_by_time =
     List.fold_left
-      (fun acc (input, output, time, _) ->
+      (fun acc (input, _, time, _) ->
          let update_table table key t =
            let nodes =
              try Hashtbl.find table t with Not_found -> []
@@ -4695,8 +4714,8 @@ let chaingraph () =
     |> List.sort (fun a b -> compare b a)
   in
 
-  List.iter (fun (cbh, pbh, time, ltxh) ->
-      Printf.fprintf oc "  \"%s\" [label=\"%s\"];\n" cbh (String.sub cbh 0 5);
+  List.iter (fun (cbh, pbh, time, color) ->
+      Printf.fprintf oc "  \"%s\" [label=\"%s\"%s];\n" cbh (String.sub cbh 0 5) (if color <> "" then ",style=filled,fillcolor=" ^ color else "");
       Printf.fprintf oc "  \"%s\" -> \"%s\";\n" cbh pbh
   ) t;
 

@@ -1615,7 +1615,7 @@ Hashtbl.add msgtype_handler POWChallengeResponse
            log_string (Printf.sprintf "POWChallengeResponse with %ld verified\n" n);
            cs.powchallenge <- None;
            cs.powtarget <- powtar;
-	   !send_inv_fn 32 sout cs;
+	   !send_inv_fn 4096 sout cs;
 	   find_and_send_requestmissingblocks cs;
            if List.length !netconns > !Config.maxconns then drop_weakest_conn ();
          end

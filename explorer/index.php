@@ -3,17 +3,23 @@ include 'i/head.php';
 include 'i/pg.php';
 include 'i/search.php';
 $json = pgj("querybestblock");
+$jsonc = pgj("queryrecentcollectedbounties 0 3");
 //var_export($json);
 ?>
 <h1>Proofgold explorer</h1>
 <table><tr>
-  <td><table><tr><th><h4><a href="bounties.php">Bounties</a>: 9190</a> worth 278'234 PG</h4></th></tr><tr><td><div id="chart"></div></td></tr></table></td>
-<td><table><tr><th><h4>Recent Claimed</h4></th></tr><tr><td>
- <div style="height: 300px;"><div align="left"><pre>
+  <td><table><tr><th><h4><a href="bounties.php">Bounties</a>: 9188</a> worth 304'239 PG</h4></th></tr><tr><td><div id="chart"></div></td></tr></table></td>
+<td><table><tr><th><h4>Recent Proved</h4></th></tr><tr><td>
+ <div><div align="left"><pre>
 <?php include 'i/mockthm.php'; ?>
   </pre></div>
-    <div align=right><font size=-2>see doc <?= abbrvaddr('PUUQgo4kCpPFsyheYGxf1dZyddFed5u2c2z') ?></div>
-
+    <div align=right><font size=-2>see document <?= abbrvaddr('PUUQgo4kCpPFsyheYGxf1dZyddFed5u2c2z') ?></font></div>
+    <h4><a href="recentbounties.php">Last Claimed<a/></h4>
+<?php
+foreach ($jsonc->bounties as $d) {
+    showbounty($d);
+}
+?>
 
 
     </div>
@@ -23,25 +29,26 @@ $json = pgj("querybestblock");
 <hr/>
   <table>
   <tr>
-    <td><table><tr><th>Blocks</th></tr><tr><td><?= ahrefblock($json->height) ?></td></tr></table></td>
+    <td><table><tr><th>Blocks</th></tr><tr><td><?= ablock($json->block, $json->height) ?></td></tr></table></td>
     <td><table><tr><th>Circulation</th></tr><tr><td><?= 5000 * 50 + ($json->height - 5000) * 25 ?></td></tr></table></td>
   </tr><tr>
     <td><table><tr><th>Addresses</th></tr><tr><td><?= $json->numaddresses ?></td></tr></table></td>
     <td><table><tr><th>Transactions</th></tr><tr><td><?= $json->numtxs ?></td></tr></table></td>
-  </tr><tr>
-    <td><table><tr><th><a href="map.php">Recent Connections</a> (Currently <?= strtok(pgopen("getpeerinfo"),"\n") ?>)</th></tr><tr><td><a href="map.php"><img src="map.jpg"/></a> </td></tr></table></td>
-<!--    <td><table><tr><th>Addresses</th></tr><tr><td></td></tr></table></td>-->
-    <td><table><tr><th>Genesis</th></tr><tr><td>June 2020: <?= ahrefblock(1) ?></td></tr></table></td>
-  </tr><tr>
+  </tr>
+  <tr>
     <td><table><tr><th>Recent</th></tr><tr><td><a href="recenttxs.php">Transactions</a></td></tr></table></td>
 <!--    <td><table><tr><th>Recent</th></tr><tr><td><a href="recentdocs.php">Documents</a></td></tr></table></td>-->
     <td><table><tr><th>Recent</th></tr><tr><td><a href="recentthms.php">Theorems</a></td></tr></table></td>
   </tr>
-  </tr><tr>
+  <tr>
+    <td><table><tr><th><a href="map.php">Recent Connections</a> (Currently <?= strtok(pgopen("getpeerinfo"),"\n") ?>)</th></tr><tr><td><a href="map.php"><img src="map.jpg"/></a> </td></tr></table></td>
+<!--    <td><table><tr><th>Addresses</th></tr><tr><td></td></tr></table></td>-->
+  </tr>
+  <tr>
 <!--  <td><table><tr><th>Recent</th></tr><tr><td><a href="msg.php">Messages</a></td></tr></table></td>
   <td><table><tr><th>Recent</th></tr><tr><td><a href="listen.php">Listeners</a></td></tr></table></td>-->
   <td><table><tr><th>All</th></tr><tr><td><a href="theories.php">Theories</a></td></tr></table></td>
-  <td><table><tr><th>Recent</th></tr><tr><td><a href="recentbounties.php">Bounties</a></td></tr></table></td>-->
+    <td><table><tr><th>Genesis</th></tr><tr><td>June 2020: <?= ahrefblock(1) ?></td></tr></table></td>
    </tr>
 </table>
 
@@ -59,7 +66,7 @@ $json = pgj("querybestblock");
 </table>
 -->
 
-<table><tr><td>Documentation and Clients: <a href="https://prfgld.github.io/">Original Proofgold</a>; <a href="https://github.com/dalcoder/proofgoldlite">ProofGoldLite</a>; <a href="http://proofgold.net/">ProofGold Lava</a></td></tr></table>
+<table><tr><td>Documentation and Clients: <a href="https://prfgld.github.io/">Original Proofgold</a> (obsolete); <a href="https://github.com/dalcoder/proofgoldlite">ProofGoldLite</a> (obsolete); <a href="http://proofgold.net/">ProofGold Lava</a> <b>(use this one!)</b></td></tr></table>
 
 <!--
 <h3>Buy Offers</h3>

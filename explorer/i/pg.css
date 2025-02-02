@@ -129,3 +129,8 @@ canvas {
     color: #008000;
     font-weight: bold;
 }
+
+.noname { font-size: 50px; }
+.pf { border-style: solid; border-width: 3px; padding: 1px; margin: 1px; }
+.claimpf { border-style: solid; border-width: 2px; padding: 1px; margin: 1px; }
+.subpf { border-style: solid; border-width: 1px; padding: 1px; margin: 1px; }

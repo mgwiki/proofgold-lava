@@ -78,6 +78,8 @@ val ltc_listunspent : unit -> ltcutxo list
 val ltc2_listunspent : unit -> ltcutxo list
 
 exception InsufficientLtcFunds
+exception NotAnLtcBurnTx
+
 val ltc_createburntx : hashval -> hashval -> int64 -> string
 val ltc_createburntx_spec : ltcutxo -> hashval -> hashval -> int64 -> string
 val ltc_signrawtransaction : string -> string

@@ -4775,6 +4775,7 @@ let initialize_commands () =
 	      | _,_ ->
 		  Printf.fprintf oc "burned %Ld prev %s next %s\n" burned (hashval_hexstring prev) (hashval_hexstring nxt)
 	    with Not_found -> raise (Failure("problem"))
+               | NotAnLtcBurnTx -> raise (Failure("Not an LTC Tx"))
 	  end
       | _ -> raise BadCommandForm);
   ac "ltcgetbestblockhash" "ltcgetbestblockhash" "Get the current tip of the ltc blockchain."
@@ -7465,7 +7466,12 @@ let initialize_commands () =
          let n = int_of_string n in
          Commands.stakingreport oc (get_bestblock_print_warnings oc) n
       | _ -> raise BadCommandForm);
-  ac "chaingraph" "chaingraph" "Save the chain graph to 'graph.dot' in GraphViz format. For most processors the graphs is too big, so you can manually restrict it to a few thousand recent blocks and for example call 'dot' on it." (fun _ _ -> Commands.chaingraph ());
+  ac "chaingraph" "chaingraph [<n>]" "Save the chain graph to 'graph.dot' in GraphViz format, starting at block n (default=39000). Then call 'dot' on it."
+    (fun _ al -> 
+      match al with
+        [] -> Commands.chaingraph 39000
+       | [n] -> Commands.chaingraph (int_of_string n)
+       | _ -> raise BadCommandForm);
   ac "blockchain" "blockchain [<n>]" "Print the blockchain up to the most recent <n> blocks, with a default of 1000 blocks."
     (fun oc al ->
       match al with
@@ -7872,7 +7878,7 @@ let resend_txpool_sometimes () =
 let refresh_explorer_tables_sometimes () =
   ac "refresh_explorer_tables" "refresh_explorer_tables" "refresh_explorer_tables" (fun _ _ -> refresh_explorer_tables ());
   while true do
-    Thread.delay 3600.0;
+    Thread.delay 36000.0;
     refresh_explorer_tables ()
   done
 

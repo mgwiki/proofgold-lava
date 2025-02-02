@@ -5,18 +5,19 @@ Information about proofgold can be found at proofgold.org.
 
 * System Requirements
 
-Proofgold requires linux, curl, the ocaml programming language, the Zarith module
+Proofgold requires linux, the ocaml programming language, the Zarith module
 and litecoin.
 
 On debian, installing the requirements (except Zarith) can be done as follows:
 
-apt-get install build-essential ocaml curl libgmp-dev libgdbm-dev
+apt-get install build-essential ocaml libgmp-dev libgdbm-dev
 
 Zarith is available here:
 
 https://github.com/ocaml/Zarith
 
 The README.md file explains how to compile and install Zarith.
+   (In many case this may be enough: ./configure; make; make install)
 
 Litecoin is available from litecoin.org. It needs to be run in a way
 so that RPC calls can be made from Proofgold. This means the litecoin.conf
@@ -33,24 +34,6 @@ Sometimes ocaml cannot find zarith. In that case, manually
 edit Makefile (or Makefile.in and rerun ./configure)
 to replace each occurrence of +zarith with the full path
 to the directory where zarith was installed.
-
-You can build the bytecode with either:
-
-```
-makebytecode
-```
-
-or
-
-```
-makevmbytecode
-```
-
-The second script compiles a version where ocaml
-handles the threads instead of the operating system.
-If you find proofgold is running very slowly,
-you might need to use makevmbytecode to obtain
-an executable that works as intended.
 
 The configure script can be given some parameters.
 For example, the default data directory is .proofgold in the
@@ -104,8 +87,8 @@ if one or both of your ltc nodes is running on a different machine or
 as a hidden service.
 
 There are many other configuration parameters you might want to set
-in `proofgold.conf` (see `src/setconfig.ml`).  The ones above should suffice for proofgold
-to interact with your litecoin node.
+in `proofgold.conf` (see `src/setconfig.ml`).  The ones above should
+suffice for proofgold to interact with your litecoin node.
 
 Here are a few examples of other configuration parameters.
 
@@ -129,8 +112,11 @@ proofgold
 
 For a full list of available commands use the command `help`.
 
-Proofgold can also be run as a daemon using `proofgoldd`
+Proofgold can also be run as a daemon using `proofgold -daemon`
 and then RPC commands can be issued via `proofgoldcli`.
+
+If you run proofgold under the tails linux distribution, you may
+want to consider running it under `torify`.
 
 * Staking
 
@@ -139,8 +125,3 @@ combination with staking proofgold currency (proofgold bars).  The
 node will attempt to stake if `staking=1` is included in the
 proofgold.conf file, or if -staking is included as a command line
 argument.
-
-Half of the block reward of a new block goes to the staker
-and the other half is placed as a bounty on a pseudorandomly
-generated proposition. Participants can claim the bounty
-by proving the proposition or its negation.
