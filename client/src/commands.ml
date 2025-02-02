@@ -4656,23 +4656,26 @@ let stakingreport oc n m =
      stakingreport_r lbk ltx m
   | None -> ()
 
-let chaingraph () =
+let chaingraph minh =
+  let minh = Int64.of_int minh in
   let t = ref [] in
   let iterk k =
     let (blk,ltime,_,utxo,_,_,height) = Db_outlinevals.dbget k in
-    try
-      let (bhd,bhs) = DbBlockHeader.dbget blk in
-      let bd = Block.DbBlockDelta.dbget blk in
-      let ntxs = List.length bd.blockdelta_stxl in
+    if height >= minh then
+      try
+        let (bhd,bhs) = DbBlockHeader.dbget blk in
+        let bd = Block.DbBlockDelta.dbget blk in
+        let ntxs = List.length bd.blockdelta_stxl in
 
-      match bhd.prevblockhash with
-      | None -> ()
-      | Some (ph, _) ->
-         let cbh = hashval_hexstring blk in
-         let pbh = hashval_hexstring ph in
-         t := (cbh, pbh, ltime, ntxs) :: !t
+        match bhd.prevblockhash with
+        | None -> ()
+        | Some (ph, _) ->
+           let cbh = hashval_hexstring blk in
+           let pbh = hashval_hexstring ph in
+           t := (cbh, pbh, ltime, ntxs) :: !t
 
-    with Not_found -> ()
+      with Not_found -> ()
+    else ()
   in
   Db_outlinevals.dbkeyiter iterk;
   let t = List.sort (fun (_, _, t1, _) (_, _, t2, _) -> compare t2 t1) !t in

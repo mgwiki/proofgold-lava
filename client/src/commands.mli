@@ -127,4 +127,4 @@ val report_recentpropid_proven : out_channel -> hashval -> hashval -> int -> uni
 val report_bounties_collected : out_channel -> hashval -> unit
 
 val stakingreport : out_channel -> (hashval * hashval * hashval) option -> int -> unit
-val chaingraph : unit -> unit
+val chaingraph : int -> unit

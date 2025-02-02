@@ -7252,7 +7252,12 @@ let initialize_commands () =
          let n = int_of_string n in
          Commands.stakingreport oc (get_bestblock_print_warnings oc) n
       | _ -> raise BadCommandForm);
-  ac "chaingraph" "chaingraph" "Save the chain graph to 'graph.dot' in GraphViz format. For most processors the graphs is too big, so you can manually restrict it to a few thousand recent blocks and for example call 'dot' on it." (fun _ _ -> Commands.chaingraph ());
+  ac "chaingraph" "chaingraph [<n>]" "Save the chain graph to 'graph.dot' in GraphViz format, starting at block n (default=39000). Then call 'dot' on it."
+    (fun _ al -> 
+      match al with
+        [] -> Commands.chaingraph 39000
+       | [n] -> Commands.chaingraph (int_of_string n)
+       | _ -> raise BadCommandForm);
   ac "blockchain" "blockchain [<n>]" "Print the blockchain up to the most recent <n> blocks, with a default of 1000 blocks."
     (fun oc al ->
       match al with
