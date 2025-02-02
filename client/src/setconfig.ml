@@ -75,6 +75,7 @@ let stringoptionconfigvars = [
 ("ltcwallet2",fun x -> Config.ltcwallet2 := x);
 ("proxyip",fun x -> Config.proxyip := x);
 ("ip",fun x -> Config.ip := x);
+("reallistenip",fun x -> Config.reallistenip := x);
 ("onion",fun x -> Config.onion := x);
 ("ltcrpconion",fun x -> Config.ltcrpconion := x);
 ("ltcrpconion2",fun x -> Config.ltcrpconion2 := x);

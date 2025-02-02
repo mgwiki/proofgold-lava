@@ -16,6 +16,7 @@ val staking : bool ref
 val swapping : bool ref
 val proxyip : string option ref
 val ip : string option ref
+val reallistenip : string option ref
 val ipv6 : bool ref
 val port : int ref
 val onion : string option ref
