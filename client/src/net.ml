@@ -931,7 +931,7 @@ let handle_msg replyto mt sin sout cs mh m =
                                     cs2.sendershouldclose <- true;
                                     Condition.signal cs2.sendqueuenonempty
                                end;
-                               !send_inv_fn 32 sout cs;
+                               !send_inv_fn 4096 sout cs;
 		               find_and_send_requestmissingblocks cs;
                              end
                            else if str2 = str1 && 0l < powtar2 then (** Send POW Challenge **)
@@ -956,7 +956,7 @@ let handle_msg replyto mt sin sout cs mh m =
                       end
                     else
                       begin
-		        !send_inv_fn 32 sout cs;
+		        !send_inv_fn 4096 sout cs;
 		        find_and_send_requestmissingblocks cs;
                       end
 		  end
