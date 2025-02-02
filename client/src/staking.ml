@@ -272,8 +272,8 @@ let compute_staking_chances (prevblkh,lbk,ltx) fromtm totm =
             try
               ltc2_listunspent ()
             with Not_found ->
-              log_string (Printf.sprintf "Staking thread could not get unspent txs from second ltc node. Make sure config params like ltcrpcuser2 and ltcrpcpass2 are set correctly (e.g., in your proofgold.conf file). If you are only running one ltc node, the values of ltcrpcuser2 and ltcrpcpass2 should be the same as the values of ltcrpcuser and ltcrpcpass. Delaying staking thread for one hour in case this is a temporary problem connecting to the second ltc node.");
-              raise (StakingPauseMsg(3600.0,"Doublecheck config params like ltcrpcuser2 and ltcrpcpass2 for connection to second ltc node (the one for spending)"))
+              log_string (Printf.sprintf "Staking thread could not get unspent txs from second ltc node. Make sure config params like ltcrpcuser2 and ltcrpcpass2 and ltcrpcport2 are set correctly (e.g., in your proofgold.conf file). If you are only running one ltc node, the values of ltcrpcuser2 and ltcrpcpass2 should be the same as the values of ltcrpcuser and ltcrpcpass. Delaying staking thread for one hour in case this is a temporary problem connecting to the second ltc node.");
+              raise (StakingPauseMsg(3600.0,"Doublecheck config params like ltcrpcuser2 and ltcrpcpass2 and ltcrpcport2 for connection to second ltc node (the one for spending)"))
           in
           if not (!Commands.stakingassets = []) || not (lul = []) then
 	    let nextstake i stkaddr h bday obl v toburn =
