@@ -7659,7 +7659,7 @@ let resend_txpool_sometimes () =
 let refresh_explorer_tables_sometimes () =
   ac "refresh_explorer_tables" "refresh_explorer_tables" "refresh_explorer_tables" (fun _ _ -> refresh_explorer_tables ());
   while true do
-    Thread.delay 3600.0;
+    Thread.delay 36000.0;
     refresh_explorer_tables ()
   done
 
