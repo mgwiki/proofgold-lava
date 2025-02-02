@@ -4664,15 +4664,25 @@ let chaingraph minh =
     if height >= minh then
       try
         let (bhd,bhs) = DbBlockHeader.dbget blk in
-        let bd = Block.DbBlockDelta.dbget blk in
-        let ntxs = List.length bd.blockdelta_stxl in
+        let ntxs =
+          try
+            let bd = Block.DbBlockDelta.dbget blk in
+            List.length bd.blockdelta_stxl
+          with Not_found -> -1
+        in
+        let color =
+          if Db.DbBlacklist.dbexists blk then "brown" else
+          if DbInvalidatedBlocks.dbexists blk then "red" else
+          if ntxs = -1 then "yellow" else
+          if ntxs > 0 then "blue" else ""
+        in
 
         match bhd.prevblockhash with
         | None -> ()
         | Some (ph, _) ->
            let cbh = hashval_hexstring blk in
            let pbh = hashval_hexstring ph in
-           t := (cbh, pbh, ltime, ntxs) :: !t
+           t := (cbh, pbh, ltime, color) :: !t
 
       with Not_found -> ()
     else ()
@@ -4703,8 +4713,8 @@ let chaingraph minh =
     |> List.sort (fun a b -> compare b a)
   in
 
-  List.iter (fun (cbh, pbh, time, ntxs) ->
-      Printf.fprintf oc "  \"%s\" [label=\"%s\"%s];\n" cbh (String.sub cbh 0 5) (if ntxs > 0 then ",style=filled,fillcolor=blue" else "");
+  List.iter (fun (cbh, pbh, time, color) ->
+      Printf.fprintf oc "  \"%s\" [label=\"%s\"%s];\n" cbh (String.sub cbh 0 5) (if color <> "" then ",style=filled,fillcolor=" ^ color else "");
       Printf.fprintf oc "  \"%s\" -> \"%s\";\n" cbh pbh
   ) t;
 
