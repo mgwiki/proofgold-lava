@@ -1,4 +1,6 @@
 <?php
+include 'pgsecret.php';
+echo $pguserpass;
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -21,11 +23,14 @@ function pgport($fnctn, $port, $loginpass) {
 }
 
 function pg($fnctn) {
-    return pgport($fnctn, 21810, "user\npassword");
+    global $pguserpass;
+    return pgport($fnctn, 21810, $pguserpass);
+
 }
 
 function pgopen($fnctn) {
-    return pgport($fnctn, 21818, "user\npassword");
+    global $pgopenuserpass;
+    return pgport($fnctn, 21818, $pgopenuserpass);
 }
 
 function pgj($fnctn) {
@@ -68,11 +73,13 @@ function file_first_line($file) {
 }
 
 function mglinki($item, $els) {
-    return ((file_exists ("/home/anon/mgw_test/etc/i/" . $item)) ? (file_first_line("/home/anon/mgw_test/etc/i/" . $item)) : $els);
+    global $mgwdir;
+    return ((file_exists ($mgwdir . "/etc/i/" . $item)) ? (file_first_line($mgwdir . "/etc/i/" . $item)) : $els);
 }
 
 function mglinka($item, $els) {
-    return ((file_exists ("/home/anon/mgw_test/etc/a/" . $item)) ? (file_first_line("/home/anon/mgw_test/etc/a/" . $item)) : $els);
+    global $mgwdir;
+    return ((file_exists ($mgwdir . "/etc/a/" . $item)) ? (file_first_line($mgwdir . "/etc/a/" . $item)) : $els);
 }
 
 function abbrvaddr($item) {
