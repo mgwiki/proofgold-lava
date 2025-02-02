@@ -1034,6 +1034,69 @@ let initialize_commands () =
       match al with
       | [m] -> Thread.delay (float_of_string m)
       | _ -> raise BadCommandForm);
+  ac "hashpair" "hashpair <hashvalhex> <hashvalhex>" "hash a pair of hashvals; usually useful to get hash of ltcblock and ltcburntx"
+    (fun oc al ->
+      match al with
+      | [h1;h2] -> Printf.fprintf oc "%s\n" (hashval_hexstring (hashpair (hexstring_hashval h1) (hexstring_hashval h2)))
+      | _ -> raise BadCommandForm);
+  ac "dboutlinevals" "dboutlinevals <key>" "look up vals in Db_outlinevals;\nthe key is the hashpair of the ltc block id and the ltc burn tx id"
+    (fun oc al ->
+      match al with
+      | [h] ->
+         begin
+           try
+             let (pfgblk,ltcmedtm,litburned,_,prev,_,blkh) = Db_outlinevals.dbget (hexstring_hashval h) in
+             Printf.fprintf oc "next pfgblk %s (%Ld)\nltcmedtm %Ld\n" (hashval_hexstring pfgblk) ltcmedtm blkh;
+             match prev with
+             | None -> Printf.fprintf oc "genesis"
+             | Some(lbk,ltx) ->
+                Printf.fprintf oc "prev burn: %s %s\n" (hashval_hexstring lbk) (hashval_hexstring ltx);
+                Printf.fprintf oc "prev hashpair: %s\n" (hashval_hexstring (hashpair lbk ltx));
+           with Not_found ->
+             Printf.fprintf oc "Not found\n"
+         end
+      | _ -> raise BadCommandForm);
+  ac "dbvalidheadervals" "dbvalidheadervals <key>" "look up vals in Db_validheadervals;\nthe key is the hashpair of the ltc block id and the ltc burn tx id"
+    (fun oc al ->
+      match al with
+      | [h] ->
+         begin
+           try
+             let (tar,tmstp,nwlr,nwthtr,nwsgtr) = Db_validheadervals.dbget (hexstring_hashval h) in
+             Printf.fprintf oc "target: %s\ntimestamp: %Ld\nnew ledger root: %s\n" (string_of_big_int tar) tmstp (hashval_hexstring nwlr)
+           with Not_found ->
+             Printf.fprintf oc "Not found\n"
+         end
+      | _ -> raise BadCommandForm);
+  ac "dbvalidblockvals" "dbvalidblockvals <key>" "look up val in Db_validblockvals;\nthe key is the hashpair of the ltc block id and the ltc burn tx id"
+    (fun oc al ->
+      match al with
+      | [h] ->
+         begin
+           try
+             if Db_validblockvals.dbget (hexstring_hashval h) then
+               Printf.fprintf oc "true\n"
+             else
+               Printf.fprintf oc "false\n"
+           with Not_found ->
+             Printf.fprintf oc "Not found\n"
+         end
+      | _ -> raise BadCommandForm);
+  ac "dbblockburns" "dbblockburns <pfgblockid>" "look up ltc burns form Db_blockburns"
+    (fun oc al ->
+      match al with
+      | [h] ->
+         let h = hexstring_hashval h in
+         begin
+           try
+             List.iter
+               (fun (lbk,ltx) ->
+                 Printf.fprintf oc "%s %s\n" (hashval_hexstring lbk) (hashval_hexstring ltx))
+               (get_blockburns h)
+           with Not_found ->
+             Printf.fprintf oc "Nothing in the db\n"
+         end
+      | _ -> raise BadCommandForm);
   ac "decodeheader" "decodeheader <hex>" "decode header given in hex into json"
     (fun oc al ->
       match al with
@@ -4680,7 +4743,10 @@ let initialize_commands () =
 	      else
                 let lh = hashpair lbh ltx in
                 if Db_validblockvals.dbexists lh then
-		  Printf.fprintf oc "+ %s %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght
+                  if Db_validheadervals.dbexists lh then
+		    Printf.fprintf oc "+ %s %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght
+                  else
+                    Printf.fprintf oc "? %s %s %s %Ld %Ld (invariant broken: valid delta, but not header)\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght
 	        else if Db_validheadervals.dbexists lh then
 		  if DbBlockDelta.dbexists dbh then
 		    Printf.fprintf oc "* %s (have delta, but not fully validated) %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght
@@ -6145,15 +6211,15 @@ let initialize_commands () =
 	  Printf.fprintf oc "Secret: %s\n" (hashval_hexstring secr);
 	  Printf.fprintf oc "Hash of secret: %s\n" (hashval_hexstring secrh)
 	end);
-  ac "verifycommitmenttx" "verifycommitmenttx alpha beta fundaddress fundid1 fundid2 alphaamt betaamt secrethash tmlock tx [json]"
+  ac "verifycommitmenttx" "verifycommitmenttx alpha beta fundaddress fundid1 fundid2 amt1 amt2 secrethash tmlock tx [json]"
     "Verify a commitment tx"
     (fun oc al ->
-      let (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,tmlcks,txs,jb) =
+      let (alphas,betas,gammas,fundid1s,fundid2s,amt1s,amt2s,secrethashs,tmlcks,txs,jb) =
 	match al with
-	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;secrethashs;tmlcks;txs] ->
-	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,tmlcks,txs,false)
-	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;secrethashs;tmlcks;txs;"json"] ->
-	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,secrethashs,tmlcks,txs,true)
+	| [alphas;betas;gammas;fundid1s;fundid2s;amt1s;amt2s;secrethashs;tmlcks;txs] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,amt1s,amt2s,secrethashs,tmlcks,txs,false)
+	| [alphas;betas;gammas;fundid1s;fundid2s;amt1s;amt2s;secrethashs;tmlcks;txs;"json"] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,amt1s,amt2s,secrethashs,tmlcks,txs,true)
 	| _ -> raise BadCommandForm
       in
       let alpha = pfgaddrstr_addr alphas in
@@ -6161,8 +6227,8 @@ let initialize_commands () =
       let gamma = pfgaddrstr_addr gammas in
       let fundid1 = hexstring_hashval fundid1s in
       let fundid2 = hexstring_hashval fundid2s in
-      let alphaamt = atoms_of_bars alphaamts in
-      let betaamt = atoms_of_bars betaamts in
+      let amt1 = atoms_of_bars amt1s in
+      let amt2 = atoms_of_bars amt2s in
       let secrethash = hexstring_hashval secrethashs in
       let tmlck = Int32.of_string tmlcks in
       let txs2 = hexstring_string txs in
@@ -6174,7 +6240,7 @@ let initialize_commands () =
       in
       let (outputsok,htlcaddr) =
 	match tauout with
-	| [(a01,(Some(aaddr2,0L,false),Currency(aamt2)));(a02,(Some(baddr2,0L,false),Currency(bamt2)))] when aamt2 = alphaamt && bamt2 = betaamt && a01 = gamma && a02 = gamma ->
+	| [(a01,(Some(aaddr2,0L,false),Currency(aamt2)));(a02,(Some(baddr2,0L,false),Currency(bamt2)))] when aamt2 = amt1 && bamt2 = amt2 && a01 = gamma && a02 = gamma ->
 	    if payaddr_addr aaddr2 = alpha then (*** this must be a commitment for beta to close the channel ***)
 	      (2,Some(payaddr_addr baddr2))
 	    else if payaddr_addr baddr2 = beta then (*** this must be a commitment for alpha to close the channel ***)
@@ -6254,15 +6320,15 @@ let initialize_commands () =
 	    else
 	      Printf.fprintf oc "Inputs and outputs do not match the form of a commitment tx.\n"
 	  end);
-  ac "verifycommitmenttx3_2" "verifycommitmenttx3_2 alpha beta fundaddress fundid1 fundid2 fundid3 alphaamt betaamt secrethash tmlock tx [json]"
+  ac "verifycommitmenttx3_2" "verifycommitmenttx3_2 alpha beta fundaddress fundid1 fundid2 fundid3 amt1 amt2 secrethash tmlock tx [json]"
     "Verify a commitment tx with 3 inputs and 2 outputs"
     (fun oc al ->
-      let (alphas,betas,gammas,fundid1s,fundid2s,fundid3s,alphaamts,betaamts,secrethashs,tmlcks,txs,jb) =
+      let (alphas,betas,gammas,fundid1s,fundid2s,fundid3s,amt1s,amt2s,secrethashs,tmlcks,txs,jb) =
 	match al with
-	| [alphas;betas;gammas;fundid1s;fundid2s;fundid3s;alphaamts;betaamts;secrethashs;tmlcks;txs] ->
-	    (alphas,betas,gammas,fundid1s,fundid2s,fundid3s,alphaamts,betaamts,secrethashs,tmlcks,txs,false)
-	| [alphas;betas;gammas;fundid1s;fundid2s;fundid3s;alphaamts;betaamts;secrethashs;tmlcks;txs;"json"] ->
-	    (alphas,betas,gammas,fundid1s,fundid2s,fundid3s,alphaamts,betaamts,secrethashs,tmlcks,txs,true)
+	| [alphas;betas;gammas;fundid1s;fundid2s;fundid3s;amt1s;amt2s;secrethashs;tmlcks;txs] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,fundid3s,amt1s,amt2s,secrethashs,tmlcks,txs,false)
+	| [alphas;betas;gammas;fundid1s;fundid2s;fundid3s;amt1s;amt2s;secrethashs;tmlcks;txs;"json"] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,fundid3s,amt1s,amt2s,secrethashs,tmlcks,txs,true)
 	| _ -> raise BadCommandForm
       in
       let alpha = pfgaddrstr_addr alphas in
@@ -6271,8 +6337,8 @@ let initialize_commands () =
       let fundid1 = hexstring_hashval fundid1s in
       let fundid2 = hexstring_hashval fundid2s in
       let fundid3 = hexstring_hashval fundid3s in
-      let alphaamt = atoms_of_bars alphaamts in
-      let betaamt = atoms_of_bars betaamts in
+      let amt1 = atoms_of_bars amt1s in
+      let amt2 = atoms_of_bars amt2s in
       let secrethash = hexstring_hashval secrethashs in
       let tmlck = Int32.of_string tmlcks in
       let txs2 = hexstring_string txs in
@@ -6284,7 +6350,7 @@ let initialize_commands () =
       in
       let (outputsok,htlcaddr) =
 	match tauout with
-	| [(a01,(Some(aaddr2,0L,false),Currency(aamt2)));(a02,(Some(baddr2,0L,false),Currency(bamt2)))] when aamt2 = alphaamt && bamt2 = betaamt && a01 = gamma && a02 = gamma ->
+	| [(a01,(Some(aaddr2,0L,false),Currency(aamt2)));(a02,(Some(baddr2,0L,false),Currency(bamt2)))] when aamt2 = amt1 && bamt2 = amt2 && a01 = gamma && a02 = gamma ->
 	    if payaddr_addr aaddr2 = alpha then (*** this must be a commitment for beta to close the channel ***)
 	      (2,Some(payaddr_addr baddr2))
 	    else if payaddr_addr baddr2 = beta then (*** this must be a commitment for alpha to close the channel ***)
@@ -6364,15 +6430,162 @@ let initialize_commands () =
 	    else
 	      Printf.fprintf oc "Inputs and outputs do not match the form of a commitment tx.\n"
 	  end);
-  ac "verifypropcommitmenttx" "verifypropcommitmenttx alpha beta fundaddress fundid1 fundid2 alphaamt betaamt propid tmlock tx [json]"
+  ac "verifycommitmenttx3_3" "verifycommitmenttx3_3 delta alpha beta fundaddress fundid1 fundid2 fundid3 amt1 amt2 amt3 htlctmlock ptlctmlock propid htlcsecrethash ptlcsecrethash tx [json]"
+    "Verify a commitment tx with 3 inputs and 3 outputs"
+    (fun oc al ->
+      let (deltas,alphas,betas,gammas,fundid1s,fundid2s,fundid3s,amt1s,amt2s,amt3s,tmlck1s,tmlck2s,propids,secrethash1s,secrethash2s,txs,jb) =
+	match al with
+	| [deltas;alphas;betas;gammas;fundid1s;fundid2s;fundid3s;amt1s;amt2s;amt3s;tmlck1s;tmlck2s;propids;secrethash1s;secrethash2s;txs] ->
+	    (deltas,alphas,betas,gammas,fundid1s,fundid2s,fundid3s,amt1s,amt2s,amt3s,tmlck1s,tmlck2s,propids,secrethash1s,secrethash2s,txs,false)
+	| [deltas;alphas;betas;gammas;fundid1s;fundid2s;fundid3s;amt1s;amt2s;amt3s;tmlck1s;tmlck2s;propids;secrethash1s;secrethash2s;txs;"json"] ->
+	    (deltas,alphas,betas,gammas,fundid1s,fundid2s,fundid3s,amt1s,amt2s,amt3s,tmlck1s,tmlck2s,propids,secrethash1s,secrethash2s,txs,true)
+	| _ -> raise BadCommandForm
+      in
+      let delta = pfgaddrstr_addr deltas in
+      let alpha = pfgaddrstr_addr alphas in
+      let beta = pfgaddrstr_addr betas in
+      let gamma = pfgaddrstr_addr gammas in
+      let fundid1 = hexstring_hashval fundid1s in
+      let fundid2 = hexstring_hashval fundid2s in
+      let fundid3 = hexstring_hashval fundid3s in
+      let amt1 = atoms_of_bars amt1s in
+      let amt2 = atoms_of_bars amt2s in
+      let amt3 = atoms_of_bars amt3s in
+      let propid = hexstring_hashval propids in
+      let secrethash1 = hexstring_hashval secrethash1s in
+      let secrethash2 = hexstring_hashval secrethash2s in
+      let tmlck1 = Int32.of_string tmlck1s in
+      let tmlck2 = Int32.of_string tmlck2s in
+      let txs2 = hexstring_string txs in
+      let (((tauin,tauout) as tau,(tausigsin,_)),_) = sei_stx seis (txs2,String.length txs2,None,0,0) in
+      let inputsok =
+	match tauin with
+	| [(a1,aid1);(a2,aid2);(a3,aid3)] when a1 = gamma && a2 = gamma && a3 = gamma && aid1 = fundid1 && aid2 = fundid2 && aid3 = fundid3 -> true
+	| _ -> false
+      in
+      let (outputsok,htlcaddr,htlcptlcaddr) =
+	match tauout with
+	| [(a01,(Some(aaddr2,0L,false),Currency(aamt2)));(a02,(Some(baddr2,0L,false),Currency(bamt2)));(a03,(Some(caddr2,0L,false),Currency(camt2)))] when aamt2 = amt1 && bamt2 = amt2 && camt2 = amt3 && a01 = gamma && a02 = gamma && a03 = gamma ->
+	    if payaddr_addr aaddr2 = alpha then (*** this must be a commitment for beta to close the channel ***)
+	      (2,Some(payaddr_addr baddr2),Some(payaddr_addr caddr2))
+	    else if payaddr_addr baddr2 = beta then (*** this must be a commitment for alpha to close the channel ***)
+	      (1,Some(payaddr_addr aaddr2),Some(payaddr_addr caddr2))
+	    else
+	      (0,None,None)
+	| _ -> (0,None,None)
+      in
+      if inputsok then
+	if outputsok = 1 then
+	  begin
+	    let (_,dv) = delta in
+	    let (_,av) = alpha in
+	    let (_,bv) = beta in
+	    let (delta1,scr1l,secr1h) = Commands.createhtlc2 bv av tmlck1 true secrethash1 in
+	    let (delta2,scr2l,secr2h) = Commands.createhtlcptlc2 dv bv av tmlck1 tmlck2 propid secrethash2 in
+	    if Some(p2shaddr_addr delta1) = htlcaddr then
+	      begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+	        if Some(p2shaddr_addr delta2) = htlcptlcaddr then
+                  begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+		    if jb then
+		      print_jsonval oc (JsonObj([("result",JsonBool(true));("commitmentfor",JsonStr(alphas))]))
+		    else
+		      Printf.fprintf oc "Valid commitment tx for %s\n" alphas
+                  end
+                else
+                  begin
+		    if jb then
+		      print_jsonval oc (JsonBool(false))
+		    else
+		      begin
+		        Printf.fprintf oc "Appears to be a commitment tx for alpha, but htlcptlc address mismatch:\nFound %s\nExpected %s\n"
+		          (addr_pfgaddrstr (p2shaddr_addr delta2))
+		          (match htlcptlcaddr with Some(delta2c) -> addr_pfgaddrstr delta2c | None -> "None")
+                      end
+                  end
+	      end
+	    else
+	      begin
+		if jb then
+		  print_jsonval oc (JsonBool(false))
+		else
+		  begin
+		    Printf.fprintf oc "Appears to be a commitment tx for alpha, but htlc address mismatch:\nFound %s\nExpected %s\n"
+		      (addr_pfgaddrstr (p2shaddr_addr delta1))
+		      (match htlcaddr with Some(delta1b) -> addr_pfgaddrstr delta1b | None -> "None")
+		  end
+	      end
+	  end
+	else if outputsok = 2 then
+	  begin
+	    let (_,dv) = delta in
+	    let (_,av) = alpha in
+	    let (_,bv) = beta in
+	    let (delta1,scr1l,secr1h) = Commands.createhtlc2 av bv tmlck1 true secrethash1 in
+	    let (delta2,scr2l,secr2h) = Commands.createhtlcptlc2 dv av bv tmlck1 tmlck2 propid secrethash2 in
+	    if Some(p2shaddr_addr delta1) = htlcaddr then
+	      begin (** it's good, could also check if alpha has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+	        if Some(p2shaddr_addr delta2) = htlcptlcaddr then
+                  begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+		    if jb then
+		      print_jsonval oc (JsonObj([("result",JsonBool(true));("commitmentfor",JsonStr(betas))]))
+		    else
+		      Printf.fprintf oc "Valid commitment tx for %s\n" betas
+                  end
+                else
+                  begin
+		    if jb then
+		      print_jsonval oc (JsonBool(false))
+		    else
+		      begin
+		        Printf.fprintf oc "Appears to be a commitment tx for alpha, but htlcptlc address mismatch:\nFound %s\nExpected %s\n"
+		          (addr_pfgaddrstr (p2shaddr_addr delta2))
+		          (match htlcptlcaddr with Some(delta2c) -> addr_pfgaddrstr delta2c | None -> "None")
+                      end
+                  end
+	      end
+	    else
+	      begin
+		if jb then
+		  print_jsonval oc (JsonBool(false))
+		else
+		  begin
+		    Printf.fprintf oc "Appears to be a commitment tx for beta, but htlc address mismatch:\nFound %s\nExpected %s\n"
+		      (addr_pfgaddrstr (p2shaddr_addr delta1))
+		      (match htlcaddr with Some(delta1b) -> addr_pfgaddrstr delta1b | None -> "None")
+		  end
+	      end
+	  end
+	else
+	  begin
+	    if jb then
+	      print_jsonval oc (JsonBool(false))
+	    else
+	      Printf.fprintf oc "Outputs do not match the form of a commitment tx.\n"
+	  end
+      else
+	if not (outputsok = 0) then
+	  begin
+	    if jb then
+	      print_jsonval oc (JsonBool(false))
+	    else
+	      Printf.fprintf oc "Inputs do not match the form of a commitment tx.\n"
+	  end
+	else
+	  begin
+	    if jb then
+	      print_jsonval oc (JsonBool(false))
+	    else
+	      Printf.fprintf oc "Inputs and outputs do not match the form of a commitment tx.\n"
+	  end);
+  ac "verifypropcommitmenttx" "verifypropcommitmenttx alpha beta fundaddress fundid1 fundid2 amt1 amt2 propid tmlock tx [json]"
     "Verify a prop commitment tx"
     (fun oc al ->
-      let (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,pids,tmlcks,txs,jb) =
+      let (alphas,betas,gammas,fundid1s,fundid2s,amt1s,amt2s,pids,tmlcks,txs,jb) =
 	match al with
-	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;pids;tmlcks;txs] ->
-	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,pids,txs,tmlcks,false)
-	| [alphas;betas;gammas;fundid1s;fundid2s;alphaamts;betaamts;pids;txs;tmlcks;"json"] ->
-	    (alphas,betas,gammas,fundid1s,fundid2s,alphaamts,betaamts,pids,txs,tmlcks,true)
+	| [alphas;betas;gammas;fundid1s;fundid2s;amt1s;amt2s;pids;tmlcks;txs] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,amt1s,amt2s,pids,txs,tmlcks,false)
+	| [alphas;betas;gammas;fundid1s;fundid2s;amt1s;amt2s;pids;txs;tmlcks;"json"] ->
+	    (alphas,betas,gammas,fundid1s,fundid2s,amt1s,amt2s,pids,txs,tmlcks,true)
 	| _ -> raise BadCommandForm
       in
       let alpha = pfgaddrstr_addr alphas in
@@ -6380,8 +6593,8 @@ let initialize_commands () =
       let gamma = pfgaddrstr_addr gammas in
       let fundid1 = hexstring_hashval fundid1s in
       let fundid2 = hexstring_hashval fundid2s in
-      let alphaamt = atoms_of_bars alphaamts in
-      let betaamt = atoms_of_bars betaamts in
+      let amt1 = atoms_of_bars amt1s in
+      let amt2 = atoms_of_bars amt2s in
       let pid = hexstring_hashval pids in
       let tmlck = Int32.of_string tmlcks in
       let txs2 = hexstring_string txs in
@@ -6393,7 +6606,7 @@ let initialize_commands () =
       in
       let (outputsok,ptlcaddr) =
 	match tauout with
-	| [(a01,(Some(aaddr2,0L,false),Currency(aamt2)));(a02,(Some(baddr2,0L,false),Currency(bamt2)))] when aamt2 = alphaamt && bamt2 = betaamt && a01 = gamma && a02 = gamma ->
+	| [(a01,(Some(aaddr2,0L,false),Currency(aamt2)));(a02,(Some(baddr2,0L,false),Currency(bamt2)))] when aamt2 = amt1 && bamt2 = amt2 && a01 = gamma && a02 = gamma ->
 	    if payaddr_addr aaddr2 = alpha then (*** this must be a commitment for beta to close the channel ***)
 	      (2,Some(payaddr_addr baddr2))
 	    else if payaddr_addr baddr2 = beta then (*** this must be a commitment for alpha to close the channel ***)
@@ -7142,9 +7355,9 @@ let initialize_commands () =
 	    let (_,_,_,_,_,_,blkh) = Db_outlinevals.dbget (hashpair lbk ltx) in
 	    try
 	      let lr = get_ledgerroot best in
-	      Printf.fprintf oc "Height: %Ld\nBlock hash: %s\nLedger root: %s\n" (Int64.sub blkh 1L) (hashval_hexstring h) (hashval_hexstring lr)
+	      Printf.fprintf oc "Height: %Ld\nBlock hash: %s\nLedger root: %s\n" blkh (hashval_hexstring h) (hashval_hexstring lr)
 	    with Not_found ->
-	      Printf.fprintf oc "Height: %Ld\nBlock hash: %s\n" (Int64.sub blkh 1L) (hashval_hexstring h)
+	      Printf.fprintf oc "Height: %Ld\nBlock hash: %s\n" blkh (hashval_hexstring h)
 	  with Not_found ->
 	    Printf.fprintf oc "Block hash: %s\n" (hashval_hexstring h));
   ac "difficulty" "difficulty" "Print the current difficulty."
