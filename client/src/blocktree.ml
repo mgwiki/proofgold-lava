@@ -1003,10 +1003,12 @@ let initialize_pfg_from_ltc sout lblkh =
     try
       Hashtbl.find ltx_lblk ltx
     with Not_found ->
-          let (_,_,_,olbk,_,_,_) = ltc_getburntransactioninfo (hashval_hexstring ltx) in
-          match olbk with
-          | Some(lbk) -> hexstring_hashval lbk
-          | None -> raise Not_found
+          try
+            let (_,_,_,olbk,_,_,_) = ltc_getburntransactioninfo (hashval_hexstring ltx) in
+            match olbk with
+            | Some(lbk) -> hexstring_hashval lbk
+            | None -> raise Not_found
+          with Ltcrpc.NotAnLtcBurnTx -> raise Not_found
   in
   let handleltcburntx lbh lmedtm ltx =
     if not (Db_outlinevals.dbexists (hashpair lbh ltx)) then
@@ -1323,7 +1325,9 @@ let get_burn dbh =
 	  try
 	    let (_,_,_,lbk2,_,_,_) = ltc_getburntransactioninfo (hashval_hexstring ltx) in
 	    lbk2 = Some(hashval_hexstring lbk)
-	  with Not_found -> false
+	  with
+          | Not_found -> false
+          | Ltcrpc.NotAnLtcBurnTx -> false
 	end)
     bbl
 
