@@ -1,6 +1,5 @@
 <?php
 include 'pgsecret.php';
-echo $pguserpass;
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -133,7 +132,7 @@ function anchor ($name) {
     return '<a name="' . $name . '"/>';
 }
 
-function doc($dc,$docaddr) {
+function doc($dc,$docaddr,$doci) {
     if (!(isset ($dc->defaultnames))) {
         $dc->defaultnames = [];
     }
@@ -146,7 +145,13 @@ function doc($dc,$docaddr) {
         $output .= ($dc->def);
     } else if($dc->docitemcase == 'docpfof') {
         $output .= anchor($dc->propid) . "Theorem " . nameordefault($dc->propid,$dc->defaultnames) . " : ";
-        $output .= ($dc->prop . " <a href=\"sp.php?pu=" . $docaddr . "&it=" . $dc->propid . "\">(proof)</a>");
+        //        $output .= ($dc->prop . " <a href=\"sp.php?pu=" . $docaddr . "&it=" . $dc->propid . "\">(proof)</a>");
+
+        //      $output .= "<div class='pfwrap'>\n";
+      $output .= "<div class='note'></div><div class='pfabbrev' id='loc_" . $docaddr . "_" . $doci . "_0_0' onclick='g(this," . '"' . $docaddr . '"' . "," . $doci . ",0,0)'>...</div></div>\n";
+      //$output .= "</div>\n";
+      //      $output .= "</div>\n";
+
     } else if ($dc->docitemcase == 'docparam') {
         $output .= anchor($dc->objid) . "Param " . nameordefault($dc->objid,$dc->defaultnames) . " : ";
         $output .= ($dc->stp);
@@ -242,8 +247,10 @@ function preasset($v) {
         $output .= "doc published by " . abbrvaddr($vp->publisher) . "<div align=left>";
         $doccount = count($vp->doc); // foreach but reversed
         $docaddr = isset($v->address) ? $v->address : $_GET["b"];
+        $i = 0;
         while ($doccount) {
-            $output .= doc($vp->doc[--$doccount],$docaddr);
+            $output .= doc($vp->doc[--$doccount],$docaddr,$i);
+            $i++;
         }
         $output .= "</div>";
     } else if ($vp->preassettype == 'theoryspec') {
