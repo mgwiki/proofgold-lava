@@ -66,7 +66,7 @@ foreach ($jsonc->bounties as $d) {
 </table>
 -->
 
-<table><tr><td>Documentation and Clients: <a href="https://prfgld.github.io/">Original Proofgold</a>; <a href="https://github.com/dalcoder/proofgoldlite">ProofGoldLite</a>; <a href="http://proofgold.net/">ProofGold Lava</a></td></tr></table>
+<table><tr><td>Documentation and Clients: <a href="https://prfgld.github.io/">Original Proofgold</a> (obsolete); <a href="https://github.com/dalcoder/proofgoldlite">ProofGoldLite</a> (obsolete); <a href="http://proofgold.net/">ProofGold Lava</a> <b>(use this one!)</b></td></tr></table>
 
 <!--
 <h3>Buy Offers</h3>
