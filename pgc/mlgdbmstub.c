@@ -24,7 +24,7 @@ static struct custom_operations gdbm_ops = {
 };
 
 static value alloc_gdbm() {
-  return (alloc_custom(&gdbm_ops, sizeof(GDBM_FILE), 0, 1));
+  return (caml_alloc_custom(&gdbm_ops, sizeof(GDBM_FILE), 0, 1));
 }
 
 value c_gdbm_open(value fname) {

@@ -4794,7 +4794,7 @@ let initialize_commands () =
 	      | _,_ ->
 		  Printf.fprintf oc "burned %Ld prev %s next %s\n" burned (hashval_hexstring prev) (hashval_hexstring nxt)
 	    with Not_found -> raise (Failure("problem"))
-               | NotAnLtcBurnTx -> raise (Failure("Not an LTC Tx"))
+               | NotAnLtcBurnTx -> raise (Failure("Not an LTC Burn Tx"))
 	  end
       | _ -> raise BadCommandForm);
   ac "ltcgetbestblockhash" "ltcgetbestblockhash" "Get the current tip of the ltc blockchain."

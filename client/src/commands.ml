@@ -3662,6 +3662,7 @@ let verifyfullledger oc h =
     Printf.fprintf oc "Do not have the root of ledger %s\n" (hashval_hexstring h);
     flush oc
 
+(* NOT USED
 let rec req_par_inv_nbhd par cnt =
   let gini = int_of_msgtype GetInvNbhd in
   let cei = int_of_msgtype CTreeElement in
@@ -3689,6 +3690,7 @@ let rec req_par_inv_nbhd par cnt =
 	      | None -> ())
 	    !netconns;
 	  if not !invrq then cnt())
+*)
 
 let dumpwallet fn =
   let f = open_out fn in

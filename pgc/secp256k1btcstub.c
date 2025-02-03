@@ -3,11 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
-#include <caml/alloc.h>
-#include <caml/mlvalues.h>
-#include <caml/memory.h>
-#include <caml/custom.h>
-#include <caml/fail.h>
 #include <arpa/inet.h>
 
 #include <time.h> // Only needed to avoid warning
@@ -20,6 +15,12 @@
 #include "ecmult_const_impl.h"
 #include "scratch_impl.h"
 
+#include <caml/alloc.h>
+#include <caml/mlvalues.h>
+#include <caml/memory.h>
+#include <caml/custom.h>
+#include <caml/fail.h>
+
 static struct custom_operations pt_ops = {
   (char*)"pt",
   custom_finalize_default,
@@ -31,7 +32,7 @@ static struct custom_operations pt_ops = {
 };
 #define Pt_val(v) ((secp256k1_ge *)Data_custom_val(v))
 static value alloc_pt() {
-  return (alloc_custom(&pt_ops, sizeof(secp256k1_ge), 0, 1));
+  return (caml_alloc_custom(&pt_ops, sizeof(secp256k1_ge), 0, 1));
 }
 
 static struct custom_operations s2n_ops = {
@@ -45,7 +46,7 @@ static struct custom_operations s2n_ops = {
 };
 #define S2n_val(v) ((secp256k1_fe *)Data_custom_val(v))
 static value alloc_s2n() {
-  return (alloc_custom(&s2n_ops, sizeof(secp256k1_fe), 0, 1));
+  return (caml_alloc_custom(&s2n_ops, sizeof(secp256k1_fe), 0, 1));
 }
 
 value c_secp256_curve_y(value odd, value x){
