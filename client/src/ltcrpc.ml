@@ -1390,6 +1390,7 @@ let rec ltc_process_block h =
 			      let (dprevprev,_,_,_,_,_,dhght) = Db_outlinevals.dbget (hashpair lprevblkh lprevtx) in
 			      let currhght = Int64.add 1L dhght in
 			      Db_outlinevals.dbput (hashpair hh txhh) (dnxt,tm,burned,(txid1,vout1),Some(lprevblkh,lprevtx),hashpair hh txhh,currhght);
+                              insert_outlinesucc (lprevblkh,lprevtx) (hh,txhh);
                               begin (** check if it's building on a block we've thrown out **)
                                 if DbBlacklist.dbexists dprevprev then
                                   DbBlacklist.dbput dprev true;
