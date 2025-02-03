@@ -4660,9 +4660,39 @@ let stakingreport oc n m =
   | None -> ()
 
 let chaingraph minh =
-  let minh = Int64.of_int minh in
   let t = ref [] in
-  let iterk k =
+
+  let iterf dhght (dbh,lbh,ltx,ltm,lhght) =
+    try
+      let (bhd,bhs) = DbBlockHeader.dbget dbh in
+
+      let color =
+        if Db.DbBlacklist.dbexists dbh then "brown" else
+        if DbInvalidatedBlocks.dbexists dbh then "red" else
+        let (bhd,bhs) = DbBlockHeader.dbget dbh in
+        let ntxs =
+          try
+            let bd = DbBlockDelta.dbget dbh in
+            List.length bd.blockdelta_stxl
+          with Not_found -> -1
+        in
+        if ntxs = -1 then "yellow" else
+        if ntxs > 0 then "lightblue" else "white"
+      in
+      match bhd.prevblockhash with
+      | None -> ()
+      | Some (ph, _) ->
+        let cbh = hashval_hexstring dbh in
+        let pbh = hashval_hexstring ph in
+        t := (cbh, pbh, ltm, (color, dhght, ltx)) :: !t
+    with
+    | Not_found -> ()
+  in
+
+  let (_,zll) = ltcpfgstatus_dbget (!ltc_bestblock) in
+  List.iter (fun (dhght,zl) -> List.iter (iterf dhght) zl) zll;
+
+(*  let iterk k =
     let (blk,ltime,_,utxo,_,_,height) = Db_outlinevals.dbget k in
     if height >= minh then
       try
@@ -4685,12 +4715,12 @@ let chaingraph minh =
         | Some (ph, _) ->
            let cbh = hashval_hexstring blk in
            let pbh = hashval_hexstring ph in
-           t := (cbh, pbh, ltime, color) :: !t
+           t := (cbh, pbh, ltime, (color, 0, "")) :: !t
 
       with Not_found -> ()
     else ()
   in
-  Db_outlinevals.dbkeyiter iterk;
+  Db_outlinevals.dbkeyiter iterk;*)
   let t = List.sort (fun (_, _, t1, _) (_, _, t2, _) -> compare t2 t1) !t in
 
   let nodes_by_time =
@@ -4716,8 +4746,12 @@ let chaingraph minh =
     |> List.sort (fun a b -> compare b a)
   in
 
-  List.iter (fun (cbh, pbh, time, color) ->
-      Printf.fprintf oc "  \"%s\" [label=\"%s\"%s];\n" cbh (String.sub cbh 0 5) (if color <> "" then ",style=filled,fillcolor=" ^ color else "");
+  List.iter (fun (cbh, pbh, time, (color, hght, ltx)) ->
+      let ltx = hashval_hexstring ltx in
+      let cbhs = String.sub cbh 0 5 in
+      let ltxs = String.sub ltx 0 5 in
+      Printf.fprintf oc "\"%s\" [shape=plain, style=filled, fillcolor=%s, label=<<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\"><TR><TD href=\"https://formalweb3.uibk.ac.at/pgbce/Bl.php?b=%s\" target=\"_blank\">%s</TD><TD>%d</TD><TD href=\"https://blockchair.com/litecoin/transaction/%s\" target=\"_blank\">%s</TD></TR></TABLE>>];" cbh color cbh cbhs (Int64.to_int hght) ltx ltxs;
+(*      Printf.fprintf oc "  \"%s\" [label=\"%s\\n%i\\n%s\"%s];\n" cbh cbhs  (hashval_hexstring ltx) (if color <> "" then ",style=filled,fillcolor=" ^ color else "");*)
       Printf.fprintf oc "  \"%s\" -> \"%s\";\n" cbh pbh
   ) t;
 
