@@ -3435,9 +3435,12 @@ let initialize_commands () =
       match al with
       | [i] -> Config.maxconns := int_of_string i;
       | _ -> raise BadCommandForm);
-  ac "setbestblock" "setbestblock <blockid> [<blockheight> <ltcblockid> <ltcburntx>]" "Manually set the current best block. This is mostly useful if -ltcoffline is being used."
+  ac "setbestblock" "setbestblock [<blockid> <blockheight> <ltcblockid> <ltcburntx>]" "Manually set the current best block. This is mostly useful if -ltcoffline is being used.\nWith no argument, it unsets best block."
     (fun oc al ->
       match al with
+      | [] ->
+	 artificialbestblock := None;
+	 artificialledgerroot := None
       | [a] ->
 	  begin
 	    let h = hexstring_hashval a in
