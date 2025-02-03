@@ -275,7 +275,9 @@ let sei_block i c = sei_prod sei_blockheader sei_blockdelta i c
 
 (* Define modules for database operations on block header and block delta *)
 module DbBlockHeader = Dbmbasic (struct type t = blockheader let basedir = "blockheader" let seival = sei_blockheader seis let seoval = seo_blockheader seosb end)
-module DbBlockDelta = Dbmbasic (struct type t = blockdelta let basedir = "blockdelta" let seival = sei_blockdelta seis let seoval = seo_blockdelta seosb end)
+module DbBlockDelta = Dbmbasic (struct type t = blockdelta let basedir = "blockdelta" let seival = sei_blockdelta seis let seoval = seo_blockdelta seosb end);;
+
+have_header_p_fn := DbBlockHeader.dbexists;;
 
 (* Define functions to get block header data, signature, and delta from the database *)
 let get_blockheaderdata h = 
