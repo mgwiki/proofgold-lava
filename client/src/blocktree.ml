@@ -955,7 +955,7 @@ let rec rec_add_to_missingheaders missingh (lbk,ltx) =
       try
         let lbktx = hashpair lbk ltx in
         let (dbh,_,_,(_,_),par,_,currhght) = Db_outlinevals.dbget (hashpair lbk ltx) in
-        if not (DbBlockHeader.dbexists dbh) then
+        if not (DbBlockHeader.dbexists dbh) && not (invalid_or_blacklisted_p dbh) then
           begin
             add_missing_header currhght dbh (Some(lbktx));
             match par with
@@ -977,7 +977,7 @@ let rec rec_add_to_missingdeltas missingd (lbk,ltx) =
       try
         let lh = hashpair lbk ltx in
         let (dbh,_,_,(_,_),par,_,currhght) = Db_outlinevals.dbget lh in
-        if not (DbBlockDelta.dbexists dbh) then
+        if not (DbBlockDelta.dbexists dbh) && not (invalid_or_blacklisted_p dbh) then
           begin
             add_missing_delta currhght dbh (Some(lh));
             match par with
