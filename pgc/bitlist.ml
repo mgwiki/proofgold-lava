@@ -64,4 +64,4 @@ let eq_by_bits (s1, st1, l1) (s2, st2, l2) =
 let eq_when_zeroed (s1, st1, l1) (s2, st2, l2) =
   l1 = l2 && (if st1 = st2 then s1 = s2 else Bebits.bit_eq s1 st1 s2 st2 l1);;
 
-let copy (s, st, len) = (String.copy s, st, len);;
+let copy (s, st, len) = (Bytes.to_string (Bytes.copy (Bytes.of_string s)), st, len);;

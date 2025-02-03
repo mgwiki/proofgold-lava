@@ -21,7 +21,7 @@ static struct custom_operations sha_buffer_ops = {
 
 #define ShaB_val(v) ((secp256k1_sha256 *)Data_custom_val(v))
 static value alloc_sha_buffer() {
-  return (alloc_custom(&sha_buffer_ops, sizeof(secp256k1_sha256), 0, 1));
+  return (caml_alloc_custom(&sha_buffer_ops, sizeof(secp256k1_sha256), 0, 1));
 }
 
 value c_sha256_buffer(value unit){

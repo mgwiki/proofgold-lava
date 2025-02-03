@@ -3,11 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
-#include <caml/alloc.h>
-#include <caml/mlvalues.h>
-#include <caml/memory.h>
-#include <caml/custom.h>
-#include <caml/fail.h>
 #include <arpa/inet.h>
 
 #include <time.h> // Only needed to avoid warning
@@ -16,6 +11,12 @@
 #include "hash_impl.h"
 #include "field_impl.h"
 #include "scratch_impl.h"
+
+#include <caml/alloc.h>
+#include <caml/mlvalues.h>
+#include <caml/memory.h>
+#include <caml/custom.h>
+#include <caml/fail.h>
 
 static struct custom_operations s2n_ops = {
   (char*)"s2n",
@@ -29,7 +30,7 @@ static struct custom_operations s2n_ops = {
 
 #define S2n_val(v) ((secp256k1_fe *)Data_custom_val(v))
 static value alloc_s2n() {
-  return (alloc_custom(&s2n_ops, sizeof(secp256k1_fe), 0, 1));
+  return (caml_alloc_custom(&s2n_ops, sizeof(secp256k1_fe), 0, 1));
 }
 
 value c_s2n_iseven(value x) {

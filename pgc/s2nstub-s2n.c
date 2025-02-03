@@ -27,7 +27,7 @@ static struct custom_operations s2n_ops = {
 #define S2n_val8(v) ((int32p8 *)Data_custom_val(v))
 #define S2n_valp(v) ((uint64_t *)Data_custom_val(v))
 static value alloc_s2n() {
-  return (alloc_custom(&s2n_ops, sizeof(int64p4), 0, 1));
+  return (caml_alloc_custom(&s2n_ops, sizeof(int64p4), 0, 1));
 }
 
 value c_s2n_to_le_string(value x){
