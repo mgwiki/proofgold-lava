@@ -1056,6 +1056,22 @@ let initialize_commands () =
              Printf.fprintf oc "Not found\n"
          end
       | _ -> raise BadCommandForm);
+  ac "dboutlinesuccs" "dboutlinesuccs <key>" "look up succeesors in Db_outlinesuccs;\nthe key is the hashpair of the ltc block id and the ltc burn tx id"
+    (fun oc al ->
+      match al with
+      | [h] ->
+         begin
+           let hk = hexstring_hashval h in
+           let rec iterfun i =
+             match Db_outlinesucc.dbget_opt (hashtag hk i) with
+             | Some (nlbk,nltx) ->
+                Printf.fprintf oc "%ld %s %s\n" i (hashval_hexstring nlbk) (hashval_hexstring nltx);
+                iterfun (Int32.add i 1l)
+             | None -> ()
+           in
+           iterfun 0l
+         end
+      | _ -> raise BadCommandForm);
   ac "dbvalidheadervals" "dbvalidheadervals <key>" "look up vals in Db_validheadervals;\nthe key is the hashpair of the ltc block id and the ltc burn tx id"
     (fun oc al ->
       match al with
@@ -7828,7 +7844,7 @@ let refresh_explorer_tables () =
   with
   | Not_found -> ()
   | Failure(ex) ->
-     Printf.printf "Failure (%s) while refreshing explorer tables. Using bkp.\n" ex;
+     log_string (Printf.sprintf "Failure (%s) while refreshing explorer tables. Using bkp.\n" ex);
      Hashtbl.clear addr_contents_table;
      Hashtbl.iter (fun k v -> Hashtbl.add addr_contents_table k v) addr_contents_table_bkp;
      Hashtbl.clear asset_id_hash_table;
