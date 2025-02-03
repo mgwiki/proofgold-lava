@@ -24,6 +24,8 @@ open Ctre
 open Block
 open Ltcrpc
 
+let processblockmutex = Mutex.create();;
+
 type swapmatchoffertype =
   | SimpleSwapMatchOffer of hashval * hashval * Be160.t * hashval * int64 * int64 * Be160.t * Be160.t * Be160.t * int
 
@@ -255,8 +257,6 @@ let analyze_swapmatchoffer_tx stxh txh tauout =
   | _ -> ();;
 
 let localpreferred : (hashval,unit) Hashtbl.t = Hashtbl.create 10;;
-
-let processing : int64 option ref = ref None;;
 
 let stxpoolfee : (hashval,int64) Hashtbl.t = Hashtbl.create 1000;;
 let stxpooltm : (hashval,int64) Hashtbl.t = Hashtbl.create 1000;;
@@ -525,31 +525,15 @@ let ensure_prev_block_valid_p lh dbh (bhd,bhs) =
 (** try to avoid processing more than one header/delta/block at once in different threads; it should still work if we do, but it's likely to be doing the same work multiple times **)
 let processing_wrapper f =
   try
-    while true do
-      match !processing with
-      | Some(tm) ->
-         if Int64.add tm 1800L < Int64.of_float (Unix.time()) then
-           (processing := None; raise Exit)
-         else
-           Thread.delay 60.0
-      | None -> raise Exit
-    done
-  with
-  | Exit ->
-     let tm = Int64.of_float (Unix.time()) in
-     processing := Some(tm);
-     try
-       f();
-       processing := None
-     with
-     | e ->
-        processing := None;
-        raise e
+    Mutex.lock processblockmutex;
+    f();
+    Mutex.unlock processblockmutex;
+  with exc -> Mutex.unlock processblockmutex; raise exc
 
 (*** assumes ancestors have been validated and info for parent is on validheadervals;
  but also does some extra checking in ensure_prev_header_valid_p
  ***)
-let process_header_real sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1 =
+let process_header_real sout validate dbp (lbh,ltxh) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1 =
   if validate then
     begin
       let bh = blockheader_id (bhd,bhs) in
@@ -562,7 +546,7 @@ let process_header_real sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght c
         if ensure_prev_header_valid_p lh then
           if valid_blockheader currhght csm tar (bhd,bhs) lmedtm burned txid1 vout1 then
 	    begin
-	      Db_validheadervals.dbput (hashpair lbh ltxh) (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
+	      Db_validheadervals.dbput lh (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
               broadcast_inv [(int_of_msgtype Headers,h)];
 	      if not (DbBlockDelta.dbexists h) then add_missing_delta currhght h (Some(lh));
 	      if dbp then
@@ -570,17 +554,6 @@ let process_header_real sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght c
 	          DbBlockHeader.dbput h (bhd,bhs);
                   rem_missing_header h
 	        end;
-	      if forw then
-	        begin
-	          List.iter
-		    (fun (lbh,ltxh) ->
-		      try
-		        let f = Hashtbl.find delayed_headers (lbh,ltxh) in
-		        Hashtbl.remove delayed_headers (lbh,ltxh);
-		        f bhd.tinfo
-		      with Not_found -> ())
-                    (get_outlinesucc (lbh,ltxh))
-	        end
 	    end
           else
 	    begin
@@ -598,13 +571,29 @@ let process_header_real sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght c
   else
     begin
       let lh = hashpair lbh ltxh in
-      Db_validheadervals.dbput (hashpair lbh ltxh) (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
+      Db_validheadervals.dbput lh (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
       if not (DbBlockDelta.dbexists h) then add_missing_delta currhght h (Some(lh));
+    end
+
+let rec clear_hashtbl_key h k =
+  if Hashtbl.mem h k then
+    begin
+      let (k1,k2) = k in
+      Hashtbl.remove h k;
+      clear_hashtbl_key h k
     end
 
 let process_header sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1 =
   processing_wrapper
-    (fun () -> process_header_real sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1)
+    (fun () -> process_header_real sout validate dbp (lbh,ltxh) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1);
+  if forw && Db_validheadervals.dbexists (hashpair lbh ltxh) then
+    begin
+      List.iter
+        (fun f ->
+          f bhd.tinfo)
+        (Hashtbl.find_all delayed_headers (lbh,ltxh));
+      clear_hashtbl_key delayed_headers (lbh,ltxh);
+    end
      
 (*** this is for saving the new ctree elements in the database ***)
 let process_delta_ctree_real h blkhght blk bhd blkdel =
@@ -788,7 +777,7 @@ let rec process_delta_ctree vfl h blkhght blk =
  also assumes header has been validated and info for it is on validheadervals;
  but also does some extra checking in ensure_prev_block_valid_p
  ***)
-let rec process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1 =
+let rec process_delta_real sout vfl validate dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1 =
   if validate then
     begin
       if invalid_or_blacklisted_p h then
@@ -815,17 +804,6 @@ let rec process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd
                      if !Config.explorer then extend_explorer_info lkey h bhd bd currhght;
                      rem_missing_delta h
 	           end;
-	         if forw then
-	           begin
-	             List.iter
-		       (fun (lbh,ltxh) ->
-		         try
-		           let f = Hashtbl.find delayed_deltas (lbh,ltxh) in
-		           Hashtbl.remove delayed_deltas (lbh,ltxh);
-		           f bhd.newtheoryroot bhd.newsignaroot bhd.tinfo
-		         with Not_found -> ())
-                       (get_outlinesucc (lbh,ltxh))
-	           end
               | None -> (*** invalid block ***)
 	         Printf.fprintf sout "Alleged block %s at height %Ld is invalid.\n" (hashval_hexstring h) currhght;
 	         verbose_blockcheck := Some(!Utils.log);
@@ -840,24 +818,33 @@ let rec process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd
         else
           begin
             log_string (Printf.sprintf "Processing header and then if successful delta (%Ld) %s since do not know header valid.\n" currhght (hashval_hexstring h));
-            process_header_real sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1;
-            if Db_validheadervals.dbexists lh then process_delta_real sout !Config.fullnode validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1
+            process_header_real sout validate dbp (lbh,ltxh) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1;
+            if Db_validheadervals.dbexists lh then process_delta_real sout !Config.fullnode validate dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1
           end
     end
   else
     begin
-      Db_validheadervals.dbput (hashpair lbh ltxh) (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
-      Db_validblockvals.dbput (hashpair lbh ltxh) true;
+      let lh = hashpair lbh ltxh in
+      Db_validheadervals.dbput lh (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
+      Db_validblockvals.dbput lh true;
     end
 
 let process_delta sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1 =
   processing_wrapper
-    (fun () -> process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1)
+    (fun () -> process_delta_real sout vfl validate dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1);
+  if forw && Db_validblockvals.dbexists (hashpair lbh ltxh) then
+    begin
+      List.iter
+        (fun f ->
+          f bhd.newtheoryroot bhd.newsignaroot bhd.tinfo)
+        (Hashtbl.find_all delayed_deltas (lbh,ltxh));
+      clear_hashtbl_key delayed_deltas (lbh,ltxh);
+    end
 
 (*** assumes ancestors have been validated and info for parent is on validheadervals and entry on validblockvals;
  but also does some extra checking in ensure_prev_block_valid_p
  ***)
-let process_block_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1 =
+let process_block_real sout vfl validate dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1 =
   if validate then
     begin
       if invalid_or_blacklisted_p h then
@@ -871,8 +858,8 @@ let process_block_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) th
             begin
               match valid_block tht sgt currhght csm tar ((bhd,bhs),bd) lmedtm burned txid1 vout1 with
               | Some(newtht,newsigt) ->
-	         Db_validheadervals.dbput (hashpair lbh ltxh) (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
-	         Db_validblockvals.dbput (hashpair lbh ltxh) true;
+	         Db_validheadervals.dbput lh (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
+	         Db_validblockvals.dbput lh true;
                  broadcast_inv [(int_of_msgtype Headers,h);(int_of_msgtype Blockdelta,h)];
 	         sync_last_height := max !sync_last_height currhght;
 	         update_theories thtr tht newtht;
@@ -885,26 +872,6 @@ let process_block_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) th
 	             DbBlockDelta.dbput h bd;
                      rem_missing_delta h;
 	           end;
-	         if forw then
-	           begin
-	             List.iter
-		       (fun (lbh,ltxh) ->
-		         begin
-		           try
-		             let f = Hashtbl.find delayed_headers (lbh,ltxh) in
-		             Hashtbl.remove delayed_headers (lbh,ltxh);
-		             f bhd.tinfo
-		           with Not_found -> ()
-		         end;
-		         begin
-		           try
-		             let f = Hashtbl.find delayed_deltas (lbh,ltxh) in
-		             Hashtbl.remove delayed_deltas (lbh,ltxh);
-		             f bhd.newtheoryroot bhd.newsignaroot bhd.tinfo
-		           with Not_found -> ()
-		         end)
-                       (get_outlinesucc (lbh,ltxh))
-	           end
               | None -> (*** invalid block ***)
 	         Printf.fprintf sout "Alleged block %s at height %Ld is invalid.\n" (hashval_hexstring h) currhght;
 	         verbose_blockcheck := Some(!Utils.log);
@@ -919,19 +886,33 @@ let process_block_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) th
             end
         else
           begin
-            process_header_real sout validate forw dbp (lbh,ltxh) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1;
-            process_delta_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1;
+            process_header_real sout validate dbp (lbh,ltxh) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1;
+            process_delta_real sout vfl validate dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1;
           end
     end
   else
     begin
-      Db_validheadervals.dbput (hashpair lbh ltxh) (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
-      Db_validblockvals.dbput (hashpair lbh ltxh) true;
+      let lh = hashpair lbh ltxh in
+      Db_validheadervals.dbput lh (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
+      Db_validblockvals.dbput lh true;
     end
 
 let process_block sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1 =
   processing_wrapper
-    (fun () -> process_block_real sout vfl validate forw dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1)
+    (fun () -> process_block_real sout vfl validate dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1);
+  if forw && Db_validblockvals.dbexists (hashpair lbh ltxh) then
+    begin
+      List.iter
+        (fun f ->
+          f bhd.tinfo)
+        (Hashtbl.find_all delayed_headers (lbh,ltxh));
+      clear_hashtbl_key delayed_headers (lbh,ltxh);
+      List.iter
+        (fun f ->
+          f bhd.newtheoryroot bhd.newsignaroot bhd.tinfo)
+        (Hashtbl.find_all delayed_deltas (lbh,ltxh));
+      clear_hashtbl_key delayed_deltas (lbh,ltxh);
+    end
 
 let reprocessblock oc h lbk ltx =
   let lh = hashpair lbk ltx in
@@ -967,6 +948,50 @@ let reprocessblock oc h lbk ltx =
     Printf.fprintf oc "Do not have header for block %s\n" (hashval_hexstring h);
     flush oc
       
+let rec rec_add_to_missingheaders missingh (lbk,ltx) =
+  if not (Hashtbl.mem missingh (lbk,ltx)) then
+    begin
+      Hashtbl.add missingh (lbk,ltx) ();
+      try
+        let lbktx = hashpair lbk ltx in
+        let (dbh,_,_,(_,_),par,_,currhght) = Db_outlinevals.dbget (hashpair lbk ltx) in
+        if not (DbBlockHeader.dbexists dbh) then
+          begin
+            add_missing_header currhght dbh (Some(lbktx));
+            match par with
+            | None -> ()
+            | Some(plbk,pltx) ->
+               rec_add_to_missingheaders missingh (plbk,pltx)
+          end
+      with Not_found -> ()
+    end;;
+
+let rec_add_to_missingheaders_1 (lbk,ltx) =
+  let missingh : (hashval * hashval,unit) Hashtbl.t = Hashtbl.create 1000 in
+  rec_add_to_missingheaders missingh (lbk,ltx)
+
+let rec rec_add_to_missingdeltas missingd (lbk,ltx) =
+  if not (Hashtbl.mem missingd (lbk,ltx)) then
+    begin
+      Hashtbl.add missingd (lbk,ltx) ();
+      try
+        let lh = hashpair lbk ltx in
+        let (dbh,_,_,(_,_),par,_,currhght) = Db_outlinevals.dbget lh in
+        if not (DbBlockDelta.dbexists dbh) then
+          begin
+            add_missing_delta currhght dbh (Some(lh));
+            match par with
+            | None -> ()
+            | Some(plbk,pltx) ->
+               rec_add_to_missingdeltas missingd (plbk,pltx)
+          end
+      with Not_found -> ()
+    end;;
+
+let rec_add_to_missingdeltas_1 (lbk,ltx) =
+  let missingd : (hashval * hashval,unit) Hashtbl.t = Hashtbl.create 1000 in
+  rec_add_to_missingdeltas missingd (lbk,ltx)
+
 let initialize_pfg_from_ltc sout lblkh =
   List.iter
     (fun h ->
@@ -981,8 +1006,8 @@ let initialize_pfg_from_ltc sout lblkh =
       DbInvalidatedBlocks.dbdelete h;
       DbBlacklist.dbdelete h)
     !Config.validatedblocks;
-  let missingh : (hashval,unit) Hashtbl.t = Hashtbl.create 1000 in
-  let missingd : (hashval,unit) Hashtbl.t = Hashtbl.create 1000 in
+  let missingh : (hashval * hashval,unit) Hashtbl.t = Hashtbl.create 1000 in
+  let missingd : (hashval * hashval,unit) Hashtbl.t = Hashtbl.create 1000 in
   let liveblocks : (hashval,unit) Hashtbl.t = Hashtbl.create 1000 in
   let liveblocks2 : (hashval * hashval,unit) Hashtbl.t = Hashtbl.create 1000 in
   let ltx_lblk : (hashval,hashval) Hashtbl.t = Hashtbl.create 1000 in
@@ -1065,7 +1090,7 @@ let initialize_pfg_from_ltc sout lblkh =
 		    else
 		      let currhght = Int64.add 1L prevhght in
                       let lbhtx = hashpair lbh ltx in
-		      Db_outlinevals.dbput (hashpair lbh ltx) (dnxt,lmedtm,burned,(txid1,vout1),Some(lprevblkh,lprevtx),hashpair lbh ltx,currhght);
+		      Db_outlinevals.dbput lbhtx (dnxt,lmedtm,burned,(txid1,vout1),Some(lprevblkh,lprevtx),lbhtx,currhght);
                       insert_outlinesucc (lprevblkh,lprevtx) (lbh,ltx);
 		      if invalid_or_blacklisted_p dnxt then
 			Hashtbl.add blockinvalidated dnxt ()
@@ -1104,11 +1129,7 @@ let initialize_pfg_from_ltc sout lblkh =
 					     process_header sout (Hashtbl.mem recentheaders dnxt) false false (lbh,ltx) dnxt (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1
 					 end
 				     with Not_found -> (*** an ancestor header was not validated/is missing ***)
-					   if not (Hashtbl.mem missingh dnxt) && not (DbBlockHeader.dbexists dnxt) then
-                                             begin
-                                               Hashtbl.add missingh dnxt ();
-                                               add_missing_header currhght dnxt (Some(lbhtx));
-                                             end
+                                       rec_add_to_missingheaders missingh (lbh,ltx)
 				   end
 				 else
 				   begin
@@ -1117,7 +1138,7 @@ let initialize_pfg_from_ltc sout lblkh =
 				   end
 			    end
 			  with Not_found ->
-                            add_missing_header currhght dnxt (Some(lbhtx))
+                            rec_add_to_missingheaders missingh (lbh,ltx)
 			end
 		  with Not_found ->
 		    Printf.fprintf sout "Missing outline info for %s:%s\n" (hashval_hexstring lprevblkh) (hashval_hexstring lprevtx)
@@ -1211,17 +1232,20 @@ let initialize_pfg_from_ltc sout lblkh =
 		   (fun (dbh,lbh,ltx,_,_) ->
                      let lh = hashpair lbh ltx in
                      try
-                       let (_,_,_,(_,_),_,_,hght) = Db_outlinevals.dbget lh in
-                       if not (Hashtbl.mem missingh dbh) && not (DbBlockHeader.dbexists dbh) then
+                       if DbBlockHeader.dbexists dbh then
                          begin
-                           Hashtbl.add missingh dbh ();
-                           add_missing_header hght dbh (Some(lh))
-                         end;
-                       if not (Hashtbl.mem missingd dbh) && not (DbBlockDelta.dbexists dbh) then
+                           if not (Db_validheadervals.dbexists lh) then
+                             let (bhd,bhs) = DbBlockHeader.dbget dbh in
+                             Db_validheadervals.dbput lh (bhd.tinfo,bhd.timestamp,bhd.newledgerroot,bhd.newtheoryroot,bhd.newsignaroot);
+                         end
+                       else
                          begin
-                           Hashtbl.add missingd dbh ();
-                           add_missing_delta hght dbh (Some(lh))
+                           rec_add_to_missingheaders missingh (lbh,ltx);
                          end;
+                       if not (DbBlockDelta.dbexists dbh) then
+                         begin
+                           rec_add_to_missingdeltas missingd (lbh,ltx);
+                         end
                      with
                      | Not_found ->
                         if not (Db_validheadervals.dbexists lh && Db_validblockvals.dbexists lh) then callwithprev := true)
@@ -1518,20 +1542,6 @@ let deserialize_exc_protect cs f =
     cs.banned <- true;
     raise e;;
 
-let rec rec_add_to_missingheaders (lbk,ltx) =
-  try
-    let lbktx = hashpair lbk ltx in
-    let (dbh,_,_,(_,_),par,_,currhght) = Db_outlinevals.dbget (hashpair lbk ltx) in
-    if not (DbBlockHeader.dbexists dbh) then
-      begin
-        add_missing_header currhght dbh (Some(lbktx));
-        match par with
-        | None -> ()
-        | Some(plbk,pltx) ->
-           rec_add_to_missingheaders (plbk,pltx)
-      end
-  with Not_found -> ();;
-
 let rec rec_process_headers (lbk,ltx) cnt =
   let lh = hashpair lbk ltx in
   try
@@ -1563,20 +1573,6 @@ let rec rec_process_headers (lbk,ltx) cnt =
                cnt()
              with Not_found -> raise Exit)
   with Not_found -> raise Exit;;
-
-let rec rec_add_to_missingdeltas (lbk,ltx) =
-  try
-    let lh = hashpair lbk ltx in
-    let (dbh,_,_,(_,_),par,_,currhght) = Db_outlinevals.dbget lh in
-    if Db_validheadervals.dbexists lh && not (DbBlockDelta.dbexists dbh) then
-      begin
-        add_missing_delta currhght dbh (Some(lh));
-        match par with
-        | None -> ()
-        | Some(plbk,pltx) ->
-           rec_add_to_missingdeltas (plbk,pltx)
-      end
-  with Not_found -> ();;
 
 let rec rec_process_deltas (lbk,ltx) cnt =
   let lh = hashpair lbk ltx in
@@ -1667,7 +1663,7 @@ Hashtbl.add msgtype_handler Headers
 			       process_header !Utils.log true true true (lbk,ltx) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1
 			     with
                              | Not_found ->
-			        Hashtbl.add delayed_headers (lbk,ltx) (fun tar -> process_header !Utils.log true true true (lbk,ltx) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1);
+			        Hashtbl.add delayed_headers (plbk,pltx) (fun tar -> process_header !Utils.log true true true (lbk,ltx) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1);
                                 if DbBlockHeader.dbexists pdbh then
                                   begin
                                     try
@@ -1676,8 +1672,8 @@ Hashtbl.add msgtype_handler Headers
                                         (fun () -> ())
                                     with Exit -> ()
                                   end
-                                else if not (Hashtbl.mem delayed_headers (plbk,pltx)) then
-                                  rec_add_to_missingheaders (plbk,pltx)
+                                else
+                                  rec_add_to_missingheaders_1 (plbk,pltx)
 			   end
 			 else
 			   begin
@@ -1850,7 +1846,7 @@ Hashtbl.add msgtype_handler Blockdelta
 		     process_delta !Utils.log !Config.fullnode true true true (lbk,ltx) h (bh,bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1
 		   with
                    | Not_found ->
-		      Hashtbl.add delayed_deltas (lbk,ltx)
+		      Hashtbl.add delayed_deltas (plbk,pltx)
 		        (fun thtr sgtr tar ->
 			  let tht = lookup_thytree thtr in
 			  let sgt = lookup_sigtree sgtr in
@@ -1863,8 +1859,8 @@ Hashtbl.add msgtype_handler Blockdelta
                               (fun () -> ())
                           with Exit -> ()
                         end
-                      else if not (Hashtbl.mem delayed_deltas (plbk,pltx)) then
-                        rec_add_to_missingdeltas (plbk,pltx)
+                      else
+                        rec_add_to_missingdeltas_1 (plbk,pltx)
                    | e -> raise e
 	      end
 	  end

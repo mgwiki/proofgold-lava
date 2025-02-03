@@ -557,6 +557,7 @@ type connstate = {
   }
 
 let send_inv_fn : (int -> out_channel -> connstate -> unit) ref = ref (fun _ _ _ -> ())
+let have_header_p_fn : (hashval -> bool) ref = ref (fun _ -> false)
 let msgtype_handler : (msgtype,in_channel * out_channel * connstate * string -> unit) Hashtbl.t = Hashtbl.create 50
 
 let send_msg_real c mh replyto mt ms =
@@ -764,7 +765,7 @@ let find_and_send_requestmissingblocks cs =
 	List.iter
           (fun (blkh,h,lbt) ->
             let f () =
-	      if (((blkh >= cs.first_full_height) && (blkh <= cs.last_height)) || Hashtbl.mem cs.rinv (dii,h)) && not (recently_requested (di,h) tm cs.invreq) then
+	      if (((blkh >= cs.first_full_height) && (blkh <= cs.last_height)) || Hashtbl.mem cs.rinv (dii,h)) && not (recently_requested (di,h) tm cs.invreq && !have_header_p_fn h) then
 	        begin
 		  let msb = Buffer.create 100 in
 		  seosbf (seo_hashval seosb h (msb,None));

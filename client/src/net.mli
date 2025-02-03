@@ -58,6 +58,7 @@ module Db_outlinesucc :
     sig
       val dbinit : unit -> unit
       val dbget : hashval -> hashval * hashval
+      val dbget_opt : hashval -> (hashval * hashval) option
       val dbexists : hashval -> bool
       val dbput : hashval -> hashval * hashval -> unit
       val dbdelete : hashval -> unit
@@ -175,6 +176,7 @@ val banpeer : string -> unit
 val clearbanned : unit -> unit
 
 val send_inv_fn : (int -> out_channel -> connstate -> unit) ref
+val have_header_p_fn : (hashval -> bool) ref
 val msgtype_handler : (msgtype,in_channel * out_channel * connstate * string -> unit) Hashtbl.t
 
 val netlistenerth : Thread.t option ref
