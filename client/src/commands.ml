@@ -1990,6 +1990,7 @@ let simple_htlcptlc_script bl stk =
 	                          | _ -> raise Not_found
 	                        with _ -> raise Not_found
                               end
+                          | _ -> raise Not_found
 	                with _ -> raise Not_found
 		      end
 		  | _ -> raise Not_found

@@ -47,6 +47,7 @@ echo let ltcversion = ref 17 >> src/config.ml
 echo let ltcsubversion = ref 1 >> src/config.ml
 echo let proxyip = ref None >> src/config.ml
 echo let ip = ref None >> src/config.ml
+echo let reallistenip = ref None >> src/config.ml
 echo let ipv6 = ref false >> src/config.ml
 echo let port = ref 21805 >> src/config.ml
 echo let onion = ref None >> src/config.ml
