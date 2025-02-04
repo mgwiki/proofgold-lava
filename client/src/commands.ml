@@ -4624,7 +4624,7 @@ let stakingreport oc n m =
         match par with
         | None -> report()
         | Some(lbk2,ltx2) ->
-           match ltc_getburntransactioninfo2 (string_hexstring (Be256.to_string ltx)) with
+           match ltc_getburntransactioninfo2cache (string_hexstring (Be256.to_string ltx)) with
            | None ->
               stakingreport_r lbk2 ltx2 (m-1)
            | Some(alpha) ->
@@ -4661,6 +4661,15 @@ let stakingreport oc n m =
 
 let chaingraph minh =
   let t = ref [] in
+  let inputs = Hashtbl.create 100 in
+
+  let preasset_color = function
+    | Bounty _ -> "pink"
+    | Marker -> "lime"
+    | DocPublication _ | TheoryPublication _ | SignaPublication _ -> "lightgreen"
+    | OwnsObj _ | OwnsProp _ | OwnsNegProp -> "fuchsia"
+    | _ -> ""
+  in
 
   let iterf dhght (dbh,lbh,ltx,ltm,lhght) =
     try
@@ -4670,20 +4679,25 @@ let chaingraph minh =
         if Db.DbBlacklist.dbexists dbh then "brown" else
         if DbInvalidatedBlocks.dbexists dbh then "red" else
         let (bhd,bhs) = DbBlockHeader.dbget dbh in
-        let ntxs =
-          try
-            let bd = DbBlockDelta.dbget dbh in
-            List.length bd.blockdelta_stxl
-          with Not_found -> -1
-        in
-        if ntxs = -1 then "yellow" else
-        if ntxs > 0 then "lightblue" else "white"
+        try
+          let bd = DbBlockDelta.dbget dbh in
+          if bd.blockdelta_stxl = [] then "white" else
+          let foldf1 sf (_alpha, (_obl, u)) =
+            if sf <> "" then sf else preasset_color u
+          in
+          let foldf2 sf ((_, preassetl), _sig) =
+            if sf <> "" then sf else List.fold_left foldf1 "" preassetl
+          in
+          let ret = List.fold_left foldf2 "" bd.blockdelta_stxl in
+          if ret = "" then "lightblue" else ret
+        with Not_found -> "yellow"
       in
       match bhd.prevblockhash with
       | None -> ()
       | Some (ph, _) ->
         let cbh = hashval_hexstring dbh in
         let pbh = hashval_hexstring ph in
+        Hashtbl.replace inputs cbh ();
         t := (cbh, pbh, ltm, (color, dhght, ltx)) :: !t
     with
     | Not_found -> ()
@@ -4741,18 +4755,20 @@ let chaingraph minh =
   let oc = open_out "graph.dot" in
   Printf.fprintf oc "digraph G {\n  rankdir=TB;\n";
 
-  let times =
-    Hashtbl.fold (fun time _ acc -> time :: acc) nodes_by_time []
-    |> List.sort (fun a b -> compare b a)
-  in
+  let times = Hashtbl.fold (fun time _ acc -> time :: acc) nodes_by_time [] in
+  let times = List.sort (fun a b -> compare b a) times in
 
   List.iter (fun (cbh, pbh, time, (color, hght, ltx)) ->
       let ltx = hashval_hexstring ltx in
+      let ltc = match ltc_getburntransactioninfo2cache ltx with Some s -> s | None -> "---------" in
       let cbhs = String.sub cbh 0 5 in
-      let ltxs = String.sub ltx 0 5 in
-      Printf.fprintf oc "\"%s\" [shape=plain, style=filled, fillcolor=%s, label=<<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\"><TR><TD href=\"https://formalweb3.uibk.ac.at/pgbce/Bl.php?b=%s\" target=\"_blank\">%s</TD><TD>%d</TD><TD href=\"https://blockchair.com/litecoin/transaction/%s\" target=\"_blank\">%s</TD></TR></TABLE>>];" cbh color cbh cbhs (Int64.to_int hght) ltx ltxs;
-(*      Printf.fprintf oc "  \"%s\" [label=\"%s\\n%i\\n%s\"%s];\n" cbh cbhs  (hashval_hexstring ltx) (if color <> "" then ",style=filled,fillcolor=" ^ color else "");*)
-      Printf.fprintf oc "  \"%s\" -> \"%s\";\n" cbh pbh
+      let ltcs = String.sub ltc 4 5 in
+      let ltcs = try List.assoc ltcs
+        [
+        ]
+      with Not_found -> ltcs in
+      Printf.fprintf oc "\"%s\" [shape=plain, style=filled, fillcolor=%s, label=<<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\"><TR><TD href=\"https://formalweb3.uibk.ac.at/pgbce/Bl.php?b=%s\" target=\"_blank\">%d</TD><TD href=\"https://blockchair.com/litecoin/transaction/%s\" target=\"_blank\">%s</TD></TR></TABLE>>];" cbh color cbh (Int64.to_int hght) ltx ltcs;
+      if Hashtbl.mem inputs pbh then Printf.fprintf oc "  \"%s\" -> \"%s\";\n" cbh pbh
   ) t;
 
   let rec add_time_edges = function
