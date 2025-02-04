@@ -6456,10 +6456,11 @@ let initialize_commands () =
       let (deltas,alphas,betas,gammas,fundid1s,fundid2s,fundid3s,amt1s,amt2s,amt3s,tmlck1s,tmlck2s,propids,secrethash1s,secrethash2s,txs,jb) =
 	match al with
 	| [deltas;alphas;betas;gammas;fundid1s;fundid2s;fundid3s;amt1s;amt2s;amt3s;tmlck1s;tmlck2s;propids;secrethash1s;secrethash2s;txs] ->
-	    (deltas,alphas,betas,gammas,fundid1s,fundid2s,fundid3s,amt1s,amt2s,amt3s,tmlck1s,tmlck2s,propids,secrethash1s,secrethash2s,txs,false)
+	   (deltas,alphas,betas,gammas,fundid1s,fundid2s,fundid3s,amt1s,amt2s,amt3s,tmlck1s,tmlck2s,propids,secrethash1s,secrethash2s,txs,false)
 	| [deltas;alphas;betas;gammas;fundid1s;fundid2s;fundid3s;amt1s;amt2s;amt3s;tmlck1s;tmlck2s;propids;secrethash1s;secrethash2s;txs;"json"] ->
 	    (deltas,alphas,betas,gammas,fundid1s,fundid2s,fundid3s,amt1s,amt2s,amt3s,tmlck1s,tmlck2s,propids,secrethash1s,secrethash2s,txs,true)
-	| _ -> raise BadCommandForm
+	| _ ->
+           raise BadCommandForm
       in
       let delta = pfgaddrstr_addr deltas in
       let alpha = pfgaddrstr_addr alphas in
@@ -6500,28 +6501,35 @@ let initialize_commands () =
 	    let (_,dv) = delta in
 	    let (_,av) = alpha in
 	    let (_,bv) = beta in
-	    let (delta1,scr1l,secr1h) = Commands.createhtlc2 bv av tmlck1 true secrethash1 in
-	    let (delta2,scr2l,secr2h) = Commands.createhtlcptlc2 dv bv av tmlck1 tmlck2 propid secrethash2 in
+	    let (delta1,scr1l,secr1h) = Commands.createhtlc2 dv av tmlck1 true secrethash1 in
 	    if Some(p2shaddr_addr delta1) = htlcaddr then
-	      begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+	      begin (** it's good **)
+	        let (delta2,scr2l,secr2h) = Commands.createhtlcptlc2 dv bv av tmlck1 tmlck2 propid secrethash2 in
 	        if Some(p2shaddr_addr delta2) = htlcptlcaddr then
-                  begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+                  begin (** it's good **)
 		    if jb then
-		      print_jsonval oc (JsonObj([("result",JsonBool(true));("commitmentfor",JsonStr(alphas))]))
+		      print_jsonval oc (JsonObj([("result",JsonBool(true));("htlcptlccommitmentfor",JsonArr[JsonStr(alphas);JsonStr(deltas);JsonStr(betas)])]))
 		    else
-		      Printf.fprintf oc "Valid commitment tx for %s\n" alphas
+		      Printf.fprintf oc "Valid commitment tx for %s with counterparty %s\nwhere %s bets %s will be proven by the deadline\nand %s bets it will not be.\n" alphas deltas betas propids alphas
                   end
                 else
-                  begin
-		    if jb then
-		      print_jsonval oc (JsonBool(false))
-		    else
-		      begin
-		        Printf.fprintf oc "Appears to be a commitment tx for alpha, but htlcptlc address mismatch:\nFound %s\nExpected %s\n"
-		          (addr_pfgaddrstr (p2shaddr_addr delta2))
-		          (match htlcptlcaddr with Some(delta2c) -> addr_pfgaddrstr delta2c | None -> "None")
-                      end
-                  end
+	          let (delta2,scr2l,secr2h) = Commands.createhtlcptlc2 dv av bv tmlck1 tmlck2 propid secrethash2 in
+	          if Some(p2shaddr_addr delta2) = htlcptlcaddr then
+                    begin (** it's good **)
+		      if jb then
+		        print_jsonval oc (JsonObj([("result",JsonBool(true));("htlcptlccommitmentfor",JsonArr[JsonStr(betas);JsonStr(deltas);JsonStr(alphas)])]))
+		      else
+		        Printf.fprintf oc "Valid commitment tx for %s with counterparty %s\nwhere %s bets %s will be proven by the deadline\nand %s bets it will not be\n" betas deltas alphas propids betas
+                    end
+                  else
+                    begin
+		      if jb then
+		        print_jsonval oc (JsonBool(false))
+		      else
+		        begin
+		          Printf.fprintf oc "Appears to be a commitment tx for %s, but htlcptlc address mismatch.\n" alphas
+                        end
+                    end
 	      end
 	    else
 	      begin
@@ -6529,7 +6537,8 @@ let initialize_commands () =
 		  print_jsonval oc (JsonBool(false))
 		else
 		  begin
-		    Printf.fprintf oc "Appears to be a commitment tx for alpha, but htlc address mismatch:\nFound %s\nExpected %s\n"
+		    Printf.fprintf oc "Appears to be a commitment tx for %s, but htlc address mismatch:\nFound %s\nExpected %s\n"
+                      alphas
 		      (addr_pfgaddrstr (p2shaddr_addr delta1))
 		      (match htlcaddr with Some(delta1b) -> addr_pfgaddrstr delta1b | None -> "None")
 		  end
@@ -6541,27 +6550,35 @@ let initialize_commands () =
 	    let (_,av) = alpha in
 	    let (_,bv) = beta in
 	    let (delta1,scr1l,secr1h) = Commands.createhtlc2 av bv tmlck1 true secrethash1 in
-	    let (delta2,scr2l,secr2h) = Commands.createhtlcptlc2 dv av bv tmlck1 tmlck2 propid secrethash2 in
 	    if Some(p2shaddr_addr delta1) = htlcaddr then
-	      begin (** it's good, could also check if alpha has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+	      begin (** it's good **)
+	        let (delta2,scr2l,secr2h) = Commands.createhtlcptlc2 dv av bv tmlck1 tmlck2 propid secrethash2 in
 	        if Some(p2shaddr_addr delta2) = htlcptlcaddr then
-                  begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+                  begin (** it's good **)
 		    if jb then
-		      print_jsonval oc (JsonObj([("result",JsonBool(true));("commitmentfor",JsonStr(betas))]))
+		      print_jsonval oc (JsonObj([("result",JsonBool(true));("htlcptlccommitmentfor",JsonArr[JsonStr(betas);JsonStr(deltas);JsonStr(alphas);JsonStr(betas)])]))
 		    else
-		      Printf.fprintf oc "Valid commitment tx for %s\n" betas
+		      Printf.fprintf oc "Valid commitment tx for %s with counterparty %s\nwhere %s bets %s will be proven by the deadline\nand %s bets it will not be.\n" betas deltas alphas propids betas
                   end
                 else
-                  begin
-		    if jb then
-		      print_jsonval oc (JsonBool(false))
-		    else
-		      begin
-		        Printf.fprintf oc "Appears to be a commitment tx for alpha, but htlcptlc address mismatch:\nFound %s\nExpected %s\n"
-		          (addr_pfgaddrstr (p2shaddr_addr delta2))
-		          (match htlcptlcaddr with Some(delta2c) -> addr_pfgaddrstr delta2c | None -> "None")
-                      end
-                  end
+	          let (delta2,scr2l,secr2h) = Commands.createhtlcptlc2 dv bv av tmlck1 tmlck2 propid secrethash2 in
+	          if Some(p2shaddr_addr delta2) = htlcptlcaddr then
+                    begin (** it's good **)
+		      if jb then
+		        print_jsonval oc (JsonObj([("result",JsonBool(true));("htlcptlccommitmentfor",JsonArr[JsonStr(betas);JsonStr(deltas);JsonStr(betas);JsonStr(alphas)])]))
+		      else
+		        Printf.fprintf oc "Valid commitment tx for %s with counterparty %s\nwhere %s bets %s will be proven by the deadline\nand %s bets it will not be.\n" betas deltas betas propids alphas
+                    end
+                  else
+                    begin
+		      if jb then
+		        print_jsonval oc (JsonBool(false))
+		      else
+		        begin
+		          Printf.fprintf oc "Appears to be a commitment tx for %s, but htlcptlc address mismatch.\n"
+                            betas
+                        end
+                    end
 	      end
 	    else
 	      begin
@@ -6597,6 +6614,13 @@ let initialize_commands () =
 	    else
 	      Printf.fprintf oc "Inputs and outputs do not match the form of a commitment tx.\n"
 	  end);
+  ac "classifyscript" "classifyscript <hex>" "Given a hexstring for a script, try to classify it as a known pattern."
+    (fun oc al ->
+      match al with
+      | [a] ->
+         let il = string_bytelist (hexstring_string a) in
+         Printf.fprintf oc "%s\n" (Commands.classify_script il [])
+      | _ -> raise BadCommandForm);
   ac "verifypropcommitmenttx" "verifypropcommitmenttx alpha beta fundaddress fundid1 fundid2 amt1 amt2 propid tmlock tx [json]"
     "Verify a prop commitment tx"
     (fun oc al ->
@@ -6642,7 +6666,7 @@ let initialize_commands () =
 	    let (_,bv) = beta in
 	    let (delta,scrl) = Commands.createptlc bv av tmlck true pid in
 	    if Some(p2shaddr_addr delta) = ptlcaddr then
-	      begin (** it's good, could also check if beta has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+	      begin (** it's good *)
 		if jb then
 		  print_jsonval oc (JsonObj([("result",JsonBool(true));("commitmentfor",JsonStr(alphas))]))
 		else
@@ -6666,7 +6690,7 @@ let initialize_commands () =
 	    let (_,bv) = beta in
 	    let (delta,scrl) = Commands.createptlc av bv tmlck true pid in
 	    if Some(p2shaddr_addr delta) = ptlcaddr then
-	      begin (** it's good, could also check if alpha has already signed it -- for now alpha can check the signature by signing with alphas key and ensuring the result is completely signed **)
+	      begin (** it's good **)
 		if jb then
 		  print_jsonval oc (JsonObj([("result",JsonBool(true));("propcommitmentfor",JsonStr(betas))]))
 		else

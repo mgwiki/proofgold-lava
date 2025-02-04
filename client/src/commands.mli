@@ -115,6 +115,7 @@ val createhtlcptlc : Be160.t -> Be160.t -> Be160.t -> int32 -> int32 -> hashval 
 val createmultisig2 : int -> (string * ((Z.t * Z.t) * bool)) list -> p2shaddr * int list
 val createmultisig : int -> jsonval -> p2shaddr * int list
 val extract_secret_from_btctx : hashval -> int -> string -> hashval
+val classify_script : int list -> int list list -> string
 
 val report_recenttxs : out_channel -> hashval -> int -> unit
 val report_recentdocs : out_channel -> hashval -> int -> unit
