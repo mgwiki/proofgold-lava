@@ -4753,7 +4753,7 @@ let chaingraph minh =
   in
 
   let oc = open_out "graph.dot" in
-  Printf.fprintf oc "digraph G {\n  rankdir=TB;\n";
+  Printf.fprintf oc "digraph G {\n  rankdir=TB;\n  bgcolor=\"transparent\";\n";
 
   let times = Hashtbl.fold (fun time _ acc -> time :: acc) nodes_by_time [] in
   let times = List.sort (fun a b -> compare b a) times in
@@ -4784,5 +4784,6 @@ let chaingraph minh =
   add_time_edges times;
 
   Printf.fprintf oc "}\n";
-  close_out oc
+  close_out oc;
+  ignore (Sys.command "dot -Tsvg graph.dot -o graph.svg > /dev/null 2>&1")
 ;;
