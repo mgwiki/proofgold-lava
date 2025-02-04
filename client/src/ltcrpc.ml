@@ -1387,15 +1387,15 @@ let rec ltc_process_block h =
 			  match lprevblkh with
 			  | Some(lprevblkh) ->
 			      let lprevblkh = hexstring_hashval lprevblkh in
-			      let (dprevprev,_,_,_,_,_,dhght) = Db_outlinevals.dbget (hashpair lprevblkh lprevtx) in
+			      let (_,_,_,_,_,_,dhght) = Db_outlinevals.dbget (hashpair lprevblkh lprevtx) in
 			      let currhght = Int64.add 1L dhght in
 			      Db_outlinevals.dbput (hashpair hh txhh) (dnxt,tm,burned,(txid1,vout1),Some(lprevblkh,lprevtx),hashpair hh txhh,currhght);
                               insert_outlinesucc (lprevblkh,lprevtx) (hh,txhh);
                               begin (** check if it's building on a block we've thrown out **)
-                                if DbBlacklist.dbexists dprevprev then
-                                  DbBlacklist.dbput dprev true;
-                                if DbInvalidatedBlocks.dbexists dprevprev then
-                                  DbInvalidatedBlocks.dbput dprev true;
+                                if DbBlacklist.dbexists dprev then
+                                  DbBlacklist.dbput dnxt true;
+                                if DbInvalidatedBlocks.dbexists dprev then
+                                  DbInvalidatedBlocks.dbput dnxt true;
                               end;
 			      (*** since the burn is presumably new, add to missing lists (unless it was staked by the current node which is handled in staking module) ***)
                                 if not (DbBlacklist.dbexists dprev || DbInvalidatedBlocks.dbexists dprev) then (** unless it's being thrown out in advance, put it on the missing lists **)
