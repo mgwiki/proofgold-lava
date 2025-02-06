@@ -1474,12 +1474,6 @@ Hashtbl.add msgtype_handler GetHeader
 	Hashtbl.replace cs.sentinv (i,h) tm;
 	let ss = Buffer.contents s in
 	ignore (queue_msg cs Headers ss);
-	begin
-	  try
-	    let cnt = Hashtbl.find localnewheader_sent h in
-	    Hashtbl.replace localnewheader_sent h (cnt + 1)
-	  with Not_found -> ()
-	end
       with Not_found ->
 	(*** don't have it to send, ignore ***)
 	());;
@@ -1511,12 +1505,6 @@ Hashtbl.add msgtype_handler GetHeaders
 	      bhl := (h,bh)::!bhl;
 	      log_string (Printf.sprintf "sending header %s to %s upon request at time %f (GetHeaders)\n" (hashval_hexstring h) cs.addrfrom (Unix.time()));
 	      Hashtbl.replace cs.sentinv (i,h) tm;
-	      begin
-		try
-		  let cnt = Hashtbl.find localnewheader_sent h in
-		  Hashtbl.replace localnewheader_sent h (cnt + 1)
-		with Not_found -> ()
-	      end
 	    end;
 	with
 	| Not_found ->
@@ -1802,12 +1790,6 @@ Hashtbl.add msgtype_handler GetBlockdelta
 	let bdser = Buffer.contents bdsb in
 	ignore (queue_msg cs Blockdelta bdser);
 	Hashtbl.replace cs.sentinv (i,h) tm;
-	begin
-	  try
-	    let cnt = Hashtbl.find localnewdelta_sent h in
-	    Hashtbl.replace localnewdelta_sent h (cnt + 1)
-	  with Not_found -> ()
-	end
       with Not_found ->
 	log_string (Printf.sprintf "Unknown Block Delta %s (Bad Peer or Did I Advertize False Inventory?)\n" (hashval_hexstring h));
 	());;
