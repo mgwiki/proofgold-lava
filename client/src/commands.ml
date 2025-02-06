@@ -4678,7 +4678,7 @@ let stakingreport oc n m =
         match par with
         | None -> report()
         | Some(lbk2,ltx2) ->
-           match ltc_getburntransactioninfo2 (string_hexstring (Be256.to_string ltx)) with
+           match ltc_getburntransactioninfo2cache (string_hexstring (Be256.to_string ltx)) with
            | None ->
               stakingreport_r lbk2 ltx2 (m-1)
            | Some(alpha) ->
@@ -4714,9 +4714,53 @@ let stakingreport oc n m =
   | None -> ()
 
 let chaingraph minh =
-  let minh = Int64.of_int minh in
   let t = ref [] in
-  let iterk k =
+  let inputs = Hashtbl.create 100 in
+
+  let preasset_color = function
+    | Bounty _ -> "pink"
+    | Marker -> "lime"
+    | DocPublication _ | TheoryPublication _ | SignaPublication _ -> "lightgreen"
+    | OwnsObj _ | OwnsProp _ | OwnsNegProp -> "fuchsia"
+    | _ -> ""
+  in
+
+  let iterf dhght (dbh,lbh,ltx,ltm,lhght) =
+    try
+      let (bhd,bhs) = DbBlockHeader.dbget dbh in
+
+      let color =
+        if Db.DbBlacklist.dbexists dbh then "brown" else
+        if DbInvalidatedBlocks.dbexists dbh then "red" else
+        let (bhd,bhs) = DbBlockHeader.dbget dbh in
+        try
+          let bd = DbBlockDelta.dbget dbh in
+          if bd.blockdelta_stxl = [] then "white" else
+          let foldf1 sf (_alpha, (_obl, u)) =
+            if sf <> "" then sf else preasset_color u
+          in
+          let foldf2 sf ((_, preassetl), _sig) =
+            if sf <> "" then sf else List.fold_left foldf1 "" preassetl
+          in
+          let ret = List.fold_left foldf2 "" bd.blockdelta_stxl in
+          if ret = "" then "lightblue" else ret
+        with Not_found -> "yellow"
+      in
+      match bhd.prevblockhash with
+      | None -> ()
+      | Some (ph, _) ->
+        let cbh = hashval_hexstring dbh in
+        let pbh = hashval_hexstring ph in
+        Hashtbl.replace inputs cbh ();
+        t := (cbh, pbh, ltm, (color, dhght, ltx)) :: !t
+    with
+    | Not_found -> ()
+  in
+
+  let (_,zll) = ltcpfgstatus_dbget (!ltc_bestblock) in
+  List.iter (fun (dhght,zl) -> List.iter (iterf dhght) zl) zll;
+
+(*  let iterk k =
     let (blk,ltime,_,utxo,_,_,height) = Db_outlinevals.dbget k in
     if height >= minh then
       try
@@ -4739,12 +4783,12 @@ let chaingraph minh =
         | Some (ph, _) ->
            let cbh = hashval_hexstring blk in
            let pbh = hashval_hexstring ph in
-           t := (cbh, pbh, ltime, color) :: !t
+           t := (cbh, pbh, ltime, (color, 0, "")) :: !t
 
       with Not_found -> ()
     else ()
   in
-  Db_outlinevals.dbkeyiter iterk;
+  Db_outlinevals.dbkeyiter iterk;*)
   let t = List.sort (fun (_, _, t1, _) (_, _, t2, _) -> compare t2 t1) !t in
 
   let nodes_by_time =
@@ -4763,16 +4807,22 @@ let chaingraph minh =
   in
 
   let oc = open_out "graph.dot" in
-  Printf.fprintf oc "digraph G {\n  rankdir=TB;\n";
+  Printf.fprintf oc "digraph G {\n  rankdir=TB;\n  bgcolor=\"transparent\";\n";
 
-  let times =
-    Hashtbl.fold (fun time _ acc -> time :: acc) nodes_by_time []
-    |> List.sort (fun a b -> compare b a)
-  in
+  let times = Hashtbl.fold (fun time _ acc -> time :: acc) nodes_by_time [] in
+  let times = List.sort (fun a b -> compare b a) times in
 
-  List.iter (fun (cbh, pbh, time, color) ->
-      Printf.fprintf oc "  \"%s\" [label=\"%s\"%s];\n" cbh (String.sub cbh 0 5) (if color <> "" then ",style=filled,fillcolor=" ^ color else "");
-      Printf.fprintf oc "  \"%s\" -> \"%s\";\n" cbh pbh
+  List.iter (fun (cbh, pbh, time, (color, hght, ltx)) ->
+      let ltx = hashval_hexstring ltx in
+      let ltc = match ltc_getburntransactioninfo2cache ltx with Some s -> s | None -> "---------" in
+      let cbhs = String.sub cbh 0 5 in
+      let ltcs = String.sub ltc 4 5 in
+      let ltcs = try List.assoc ltcs
+        [
+        ]
+      with Not_found -> ltcs in
+      Printf.fprintf oc "\"%s\" [shape=plain, style=filled, fillcolor=%s, label=<<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\"><TR><TD href=\"https://formalweb3.uibk.ac.at/pgbce/Bl.php?b=%s\" target=\"_blank\">%d</TD><TD href=\"https://blockchair.com/litecoin/transaction/%s\" target=\"_blank\">%s</TD></TR></TABLE>>];" cbh color cbh (Int64.to_int hght) ltx ltcs;
+      if Hashtbl.mem inputs pbh then Printf.fprintf oc "  \"%s\" -> \"%s\";\n" cbh pbh
   ) t;
 
   let rec add_time_edges = function
@@ -4788,5 +4838,6 @@ let chaingraph minh =
   add_time_edges times;
 
   Printf.fprintf oc "}\n";
-  close_out oc
+  close_out oc;
+  ignore (Sys.command "dot -Tsvg graph.dot -o graph.svg > /dev/null 2>&1")
 ;;

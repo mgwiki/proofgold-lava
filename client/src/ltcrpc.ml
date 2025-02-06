@@ -1321,6 +1321,16 @@ let ltc_getburntransactioninfo2 h =
     end
   with JsonParseFail(_,_) -> None
 
+
+let ltc_getburntransactioninfo2cache =
+  let cache = Hashtbl.create 1000 in
+  fun h ->
+  try Hashtbl.find cache h
+  with Not_found ->
+    let ret = ltc_getburntransactioninfo2 h in
+    Hashtbl.add cache h ret; ret
+;;
+
 module DbLtcBurnTx = Dbmbasic (struct type t = int64 * hashval * hashval * hashval * int32 let basedir = "ltcburntx" let seival = sei_prod5 sei_int64 sei_hashval sei_hashval sei_hashval sei_int32 seis let seoval = seo_prod5 seo_int64 seo_hashval seo_hashval seo_hashval seo_int32 seosb end)
 
 module DbLtcBlock = Dbmbasic (struct type t = hashval * int64 * int64 * hashval list let basedir = "ltcblock" let seival = sei_prod4 sei_hashval sei_int64 sei_int64 (sei_list sei_hashval) seis let seoval = seo_prod4 seo_hashval seo_int64 seo_int64 (seo_list seo_hashval) seosb end)
