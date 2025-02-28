@@ -53,7 +53,7 @@ of the database. One should be available at http://proofgold.net/dbm
 
 http://proofgold.net/dbm/
 
-After downloading a recent snapshot, e.g., dbm_20252402.tgz,
+After downloading a recent snapshot, e.g., dbm_20250228.tgz,
 you should untar it into the data directory. First remove
 any existing directory dbm and file lastltcblock.
 
