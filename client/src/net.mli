@@ -210,9 +210,6 @@ val recently_sent : int * hashval -> float -> (int * hashval,float) Hashtbl.t ->
 val liberally_accept_elements_until : float -> unit
 val liberally_accept_elements_p : float -> bool
 
-val localnewheader_sent : (hashval,int) Hashtbl.t
-val localnewdelta_sent : (hashval,int) Hashtbl.t
-
 val initnetwork : out_channel -> unit
 val disconnect_completely : unit -> unit
 

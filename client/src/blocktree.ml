@@ -270,6 +270,8 @@ let artificialbestblock = ref None;;
 let recentheaders : (hashval,unit) Hashtbl.t = Hashtbl.create 1000;;
 let blockinvalidated : (hashval,unit) Hashtbl.t = Hashtbl.create 1000;;
 
+let delayed_headers_h : (hashval * hashval * hashval,unit) Hashtbl.t = Hashtbl.create 100;;
+let delayed_deltas_h : (hashval * hashval * hashval,unit) Hashtbl.t = Hashtbl.create 100;;
 let delayed_headers : (hashval * hashval,Z.t -> unit) Hashtbl.t = Hashtbl.create 100;;
 let delayed_deltas : (hashval * hashval,hashval option -> hashval option -> Z.t -> unit) Hashtbl.t = Hashtbl.create 100;;
 
@@ -1474,12 +1476,6 @@ Hashtbl.add msgtype_handler GetHeader
 	Hashtbl.replace cs.sentinv (i,h) tm;
 	let ss = Buffer.contents s in
 	ignore (queue_msg cs Headers ss);
-	begin
-	  try
-	    let cnt = Hashtbl.find localnewheader_sent h in
-	    Hashtbl.replace localnewheader_sent h (cnt + 1)
-	  with Not_found -> ()
-	end
       with Not_found ->
 	(*** don't have it to send, ignore ***)
 	());;
@@ -1511,12 +1507,6 @@ Hashtbl.add msgtype_handler GetHeaders
 	      bhl := (h,bh)::!bhl;
 	      log_string (Printf.sprintf "sending header %s to %s upon request at time %f (GetHeaders)\n" (hashval_hexstring h) cs.addrfrom (Unix.time()));
 	      Hashtbl.replace cs.sentinv (i,h) tm;
-	      begin
-		try
-		  let cnt = Hashtbl.find localnewheader_sent h in
-		  Hashtbl.replace localnewheader_sent h (cnt + 1)
-		with Not_found -> ()
-	      end
 	    end;
 	with
 	| Not_found ->
@@ -1663,23 +1653,27 @@ Hashtbl.add msgtype_handler Headers
 			       process_header !Utils.log true true true (lbk,ltx) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1
 			     with
                              | Not_found ->
-			        Hashtbl.add delayed_headers (plbk,pltx) (fun tar -> process_header !Utils.log true true true (lbk,ltx) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1);
-                                if DbBlockHeader.dbexists pdbh then
+                                if not (Hashtbl.mem delayed_headers_h (plbk,pltx,h)) then
                                   begin
-                                    try
-                                      rec_process_headers
-                                        (plbk,pltx)
-                                        (fun () -> ())
-                                    with Exit -> ()
-                                  end
-                                else
-                                  rec_add_to_missingheaders_1 (plbk,pltx)
-			   end
-			 else
-			   begin
-			     Printf.fprintf !Utils.log "Alleged block %s at height %Ld had an invalid header, pointing to an incorrect previous block or proof of burn.\n" (hashval_hexstring h) currhght;
-			     DbInvalidatedBlocks.dbput h true
-			   end
+                                    Hashtbl.add delayed_headers_h (plbk,pltx,h) ();
+			            Hashtbl.add delayed_headers (plbk,pltx) (fun tar -> process_header !Utils.log true true true (lbk,ltx) h (bhd,bhs) currhght csm tar lmedtm burned txid1 vout1; Hashtbl.remove delayed_headers_h (plbk,pltx,h));
+                                    if DbBlockHeader.dbexists pdbh then
+                                      begin
+                                        try
+                                          rec_process_headers
+                                            (plbk,pltx)
+                                            (fun () -> ())
+                                        with Exit -> ()
+                                      end
+                                    else
+                                      rec_add_to_missingheaders_1 (plbk,pltx)
+			          end
+			        else
+			          begin
+			            Printf.fprintf !Utils.log "Alleged block %s at height %Ld had an invalid header, pointing to an incorrect previous block or proof of burn.\n" (hashval_hexstring h) currhght;
+			            DbInvalidatedBlocks.dbput h true
+			          end
+                           end
 		       with Not_found -> () (*** do not know the burn for the parent; ignore header ***)
 		  end
 	      end
@@ -1802,12 +1796,6 @@ Hashtbl.add msgtype_handler GetBlockdelta
 	let bdser = Buffer.contents bdsb in
 	ignore (queue_msg cs Blockdelta bdser);
 	Hashtbl.replace cs.sentinv (i,h) tm;
-	begin
-	  try
-	    let cnt = Hashtbl.find localnewdelta_sent h in
-	    Hashtbl.replace localnewdelta_sent h (cnt + 1)
-	  with Not_found -> ()
-	end
       with Not_found ->
 	log_string (Printf.sprintf "Unknown Block Delta %s (Bad Peer or Did I Advertize False Inventory?)\n" (hashval_hexstring h));
 	());;
@@ -1846,21 +1834,26 @@ Hashtbl.add msgtype_handler Blockdelta
 		     process_delta !Utils.log !Config.fullnode true true true (lbk,ltx) h (bh,bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1
 		   with
                    | Not_found ->
-		      Hashtbl.add delayed_deltas (plbk,pltx)
-		        (fun thtr sgtr tar ->
-			  let tht = lookup_thytree thtr in
-			  let sgt = lookup_sigtree sgtr in
-			  process_delta !Utils.log !Config.fullnode true true true (lbk,ltx) h (bh,bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1);
-                      if DbBlockDelta.dbexists pdbh then
+                      if not (Hashtbl.mem delayed_deltas_h (plbk,pltx,h)) then
                         begin
-                          try
-                            rec_process_deltas
-                              (plbk,pltx)
-                              (fun () -> ())
-                          with Exit -> ()
+                          Hashtbl.add delayed_deltas_h (plbk,pltx,h) ();
+		          Hashtbl.add delayed_deltas (plbk,pltx)
+		            (fun thtr sgtr tar ->
+			      let tht = lookup_thytree thtr in
+			      let sgt = lookup_sigtree sgtr in
+			      process_delta !Utils.log !Config.fullnode true true true (lbk,ltx) h (bh,bd) thtr tht sgtr sgt currhght csm tar lmedtm burned txid1 vout1;
+                              Hashtbl.remove delayed_deltas_h (plbk,pltx,h));
+                          if DbBlockDelta.dbexists pdbh then
+                            begin
+                              try
+                                rec_process_deltas
+                                  (plbk,pltx)
+                                  (fun () -> ())
+                              with Exit -> ()
+                            end
+                          else
+                            rec_add_to_missingdeltas_1 (plbk,pltx)
                         end
-                      else
-                        rec_add_to_missingdeltas_1 (plbk,pltx)
                    | e -> raise e
 	      end
 	  end

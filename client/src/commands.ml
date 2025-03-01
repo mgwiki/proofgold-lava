@@ -2078,6 +2078,60 @@ let rec script_stack bl stk =
   else
     script_stack bs (dl::stk)
 
+let classify_script bl stk =
+  try
+    let (sigssofar,b,x,y,h) = simple_checksig_script bl stk in
+    Printf.sprintf "Simple checksig script for address %s\n" (addr_pfgaddrstr (p2pkhaddr_addr h))
+  with Not_found ->
+    try
+      let (sigssofar,redscr,m,n,pkl) = simple_multisig_script bl stk in
+      let sb = Buffer.create 1000 in
+      Buffer.add_string sb (Printf.sprintf "%d-of-%d multisig for the following addresses:\n" m n);
+      List.iter
+        (fun (_,_,_,h) ->
+          Buffer.add_string sb (Printf.sprintf "%s\n" (addr_pfgaddrstr (p2pkhaddr_addr h))))
+        pkl;
+      Buffer.contents sb
+    with Not_found ->
+      try
+	let (alpha,beta,locktm,rel,secrh) = simple_htlc_script bl stk in (* two cases: we know the secret and the key for alpha, or the key for beta (allowing signing before locktm is reached) *)
+        if rel then
+          Printf.sprintf "htlc script:\n%s with secret hashing to %s\nor %s after %Ld confirmations." (addr_pfgaddrstr (p2pkhaddr_addr alpha)) (hashval_hexstring secrh) (addr_pfgaddrstr (p2pkhaddr_addr beta)) locktm
+        else if locktm >= 500000000L then
+          Printf.sprintf "htlc script: %s with secret hashing to %s\nor %s after time %Ld." (addr_pfgaddrstr (p2pkhaddr_addr alpha)) (hashval_hexstring secrh) (addr_pfgaddrstr (p2pkhaddr_addr beta)) locktm
+        else
+          Printf.sprintf "htlc script:\n%s with secret hashing to %s\nor %s after block with height %Ld." (addr_pfgaddrstr (p2pkhaddr_addr alpha)) (hashval_hexstring secrh) (addr_pfgaddrstr (p2pkhaddr_addr beta)) locktm
+      with Not_found ->
+        try
+	  let (alpha,beta,locktm,ltxid) = simple_atomicswap_script bl stk in (* two cases: the ltc tx has confirmed or the timelock has passed. *)
+          Printf.sprintf "script for atomic swap with ltc:\n%s after ltc tx %s confirms\nor %s after (rel or abs) lock time %Ld" (addr_pfgaddrstr (p2pkhaddr_addr alpha)) (hashval_hexstring ltxid) (addr_pfgaddrstr (p2pkhaddr_addr beta)) locktm
+        with Not_found ->
+          try
+	    let (alpha,beta,locktm,ltxid,n,cltv) = simple_atomicswap_n_script bl stk in (* two cases: the ltc tx has confirmed or the timelock has passed. *)
+            Printf.sprintf "script for atomic swap with ltc:\n%s after ltc tx %s confirms\nor %s after (rel or abs) lock time %Ld" (addr_pfgaddrstr (p2pkhaddr_addr alpha)) (hashval_hexstring ltxid) (addr_pfgaddrstr (p2pkhaddr_addr beta)) locktm
+          with Not_found ->
+            try
+              let (alpha,beta,n,csv) = simple_veto_script bl stk in (** alpha can spend [veto], or after n beta can spend **)
+              "veto transaction from the old bounty fund era"
+            with Not_found ->
+              try
+	        let (alpha,beta,locktm,rel,pid) = simple_ptlc_script bl stk in (* two cases: we have the key for alpha (and we sign assuming the prop with propid has been proven), or we have the key for beta (allowing signing before locktm is reached) *)
+                if rel then
+                  Printf.sprintf "ptlc script:\n%s if %s is proven\nor %s after %Ld confirmations." (addr_pfgaddrstr (p2pkhaddr_addr alpha)) (hashval_hexstring pid) (addr_pfgaddrstr (p2pkhaddr_addr beta)) locktm
+                else if locktm >= 500000000L then
+                  Printf.sprintf "ptlc script:\n%s if %s is proven\nor %s after time %Ld." (addr_pfgaddrstr (p2pkhaddr_addr alpha)) (hashval_hexstring pid) (addr_pfgaddrstr (p2pkhaddr_addr beta)) locktm
+                else
+                  Printf.sprintf "ptlc script:\n%s if %s is proven\nor %s after block with height %Ld." (addr_pfgaddrstr (p2pkhaddr_addr alpha)) (hashval_hexstring pid) (addr_pfgaddrstr (p2pkhaddr_addr beta)) locktm
+              with Not_found ->
+                try
+	          let (delta,alpha,beta,locktm1,locktm2,pid,secrh) = simple_htlcptlc_script bl stk in (* three cases: we know the secret and the key for delta (and sign with them), we have the key for alpha (and we sign assuming the prop with propid has been proven even before locktm1 is reached), or we have the key for beta (allowing signing before locktm1 and locktm2 are reached) *)
+                  if locktm2 >= 500000000L then
+                    Printf.sprintf "htlcptlc:\n%s with secret hashing to %s\nor (after %Ld confirmations)\n%s if %s is proven\nor %s after time %Ld" (addr_pfgaddrstr (p2pkhaddr_addr delta)) (hashval_hexstring secrh) locktm1 (addr_pfgaddrstr (p2pkhaddr_addr alpha)) (hashval_hexstring pid) (addr_pfgaddrstr (p2pkhaddr_addr beta)) locktm2
+                  else
+                    Printf.sprintf "htlcptlc:\n%s with secret hashing to %s\nor (after %Ld confirmations)\n%s if %s is proven\nor %s after block with height %Ld" (addr_pfgaddrstr (p2pkhaddr_addr delta)) (hashval_hexstring secrh) locktm1 (addr_pfgaddrstr (p2pkhaddr_addr alpha)) (hashval_hexstring pid) (addr_pfgaddrstr (p2pkhaddr_addr beta)) locktm2
+                with Not_found ->
+                  "Unknown script"
+
 let signtx_p2sh_partialsig_2 secrl kl beta taue psig bl stk =
   try
     let (sigssofar,b,x,y,h) = simple_checksig_script bl stk in
@@ -4246,9 +4300,9 @@ let createhtlcptlc2 delta alpha beta tmlock1 tmlock2 pid secrh =
      0x20] (** PUSH 32 bytes (the hash of the secret) onto the stack **)
     @ be256_bytelist secrh
     @ [0x88; (** OP_EQUALVERIFY to ensure the secret hashes to the expected hash **)
-       0x76; (** OP_DUP -- duplicate the given pubkey for alpha **)
+       0x76; (** OP_DUP -- duplicate the given pubkey for delta **)
        0xa9; (** OP_HASH160 -- hash the given pubkey **)
-       0x14] (** PUSH 20 bytes (should be hash of pubkey for alpha) onto the stack **)
+       0x14] (** PUSH 20 bytes (should be hash of pubkey for delta) onto the stack **)
     @ be160_bytelist delta
     @ [0x67; (** OP_ELSE **)
        0x04] (** PUSH 4 byte onto the stack (lock time) **)

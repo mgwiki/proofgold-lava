@@ -51,11 +51,6 @@ let blockheaderdata_burn_vin1_match bhd txid vout =
   | None -> true
   | Some(txid1,vout1) -> (txid = txid1) && (vout = vout1)
   
-let advertise_new_block newblkid =
-  broadcast_inv [(int_of_msgtype Headers,newblkid);(int_of_msgtype Blockdelta,newblkid)];
-  Hashtbl.add localnewheader_sent newblkid 0;
-  Hashtbl.add localnewdelta_sent newblkid 0
-
 let get_reward_locktime blkh =
   let rl =
     match !Config.reward_lock_relative with
@@ -272,8 +267,8 @@ let compute_staking_chances (prevblkh,lbk,ltx) fromtm totm =
             try
               ltc2_listunspent ()
             with Not_found ->
-              log_string (Printf.sprintf "Staking thread could not get unspent txs from second ltc node. Make sure config params like ltcrpcuser2 and ltcrpcpass2 and ltcrpcport2 are set correctly (e.g., in your proofgold.conf file). If you are only running one ltc node, the values of ltcrpcuser2 and ltcrpcpass2 should be the same as the values of ltcrpcuser and ltcrpcpass. Delaying staking thread for one hour in case this is a temporary problem connecting to the second ltc node.");
-              raise (StakingPauseMsg(3600.0,"Doublecheck config params like ltcrpcuser2 and ltcrpcpass2 and ltcrpcport2 for connection to second ltc node (the one for spending)"))
+              log_string (Printf.sprintf "Staking thread could not get unspent txs from second ltc node. Make sure config params like ltcrpcuser2 and ltcrpcpass2 are set correctly (e.g., in your proofgold.conf file). If you are only running one ltc node, the values of ltcrpcuser2 and ltcrpcpass2 should be the same as the values of ltcrpcuser and ltcrpcpass. Delaying staking thread for one hour in case this is a temporary problem connecting to the second ltc node.");
+              raise (StakingPauseMsg(3600.0,"Doublecheck config params like ltcrpcuser2 and ltcrpcpass2 for connection to second ltc node (the one for spending)"))
           in
           if not (!Commands.stakingassets = []) || not (lul = []) then
 	    let nextstake i stkaddr h bday obl v toburn =
@@ -599,7 +594,6 @@ let stakingthread () =
 					              dync := c;
 					              rembytesestimate := !rembytesestimate - bytesestimate
 					            with MaxAssetsAtAddress ->
-                                                      log_string "Max Assets as Address\n";
                                                       counter := counter1
 					          end
 				                else
@@ -864,8 +858,6 @@ let stakingthread () =
 			          | Some(tht2,sigt2) ->
 			             update_theories thyroot thytree tht2; (* locally update theories *)
 			             update_signatures sigroot sigtree sigt2; (* locally update signatures *)
-			             (** now that we have double checked validity, advertise the block to peers (before burning ltc) **)
-			             advertise_new_block newblkid
 			          | None ->
 			             log_string (Printf.sprintf "New block is not valid\n");
 			             begin
@@ -922,12 +914,9 @@ let stakingthread () =
 			                pendingpfgblock := None
                                   end
 			        else
-			          let hscnt = (try Hashtbl.find localnewheader_sent newblkid with Not_found -> -1) in
-			          let dscnt = (try Hashtbl.find localnewdelta_sent newblkid with Not_found -> -1) in
-			          if max hscnt dscnt < !Config.minconnstostake then
+			          if List.length !netconns < !Config.minconnstostake then
 			            begin
-				      log_string (Printf.sprintf "Delaying publication of block %s until it has been sent to %d peers (minconnstostake), currently header sent to %d peers and delta sent to %d peers.\n" (hashval_hexstring newblkid) !Config.minconnstostake hscnt dscnt);
-				      broadcast_inv [(int_of_msgtype Headers,newblkid);(int_of_msgtype Blockdelta,newblkid)];
+				      log_string (Printf.sprintf "Delaying publication of block %s since connected to less than %d peers (minconnstostake), currently connected to only %d peers.\n" (hashval_hexstring newblkid) !Config.minconnstostake (List.length !netconns));
 				      raise StakingPublishBlockPause
 			            end
 			          else
@@ -1075,7 +1064,6 @@ let stakingthread () =
 						      dync := c;
 						      rembytesestimate := !rembytesestimate - bytesestimate
 					            with MaxAssetsAtAddress ->
-                                                      log_string "Max Assets as Address\n";
                                                       counter := counter1
 					          end
 					        else
@@ -1340,8 +1328,6 @@ let stakingthread () =
 			          | Some(tht2,sigt2) ->
 				     update_theories thyroot thytree tht2; (* locally update theories *)
 				     update_signatures sigroot sigtree sigt2; (* locally update signatures *)
-				     (** now that we have double checked validity, advertise the block to peers (before burning ltc) **)
-				     advertise_new_block newblkid
 			          | None ->
 				     log_string (Printf.sprintf "New block is not valid\n");
 				     begin
@@ -1398,12 +1384,9 @@ let stakingthread () =
 			                pendingpfgblock := None
                                   end
 			        else
-			          let hscnt = (try Hashtbl.find localnewheader_sent newblkid with Not_found -> -1) in
-			          let dscnt = (try Hashtbl.find localnewdelta_sent newblkid with Not_found -> -1) in
-			          if max hscnt dscnt < !Config.minconnstostake then
+			          if List.length !netconns < !Config.minconnstostake then
 				    begin
-				      log_string (Printf.sprintf "Delaying publication of block %s until it has been sent to %d peers (minconnstostake), currently header sent to %d peers and delta sent to %d peers.\n" (hashval_hexstring newblkid) !Config.minconnstostake hscnt dscnt);
-				      broadcast_inv [(int_of_msgtype Headers,newblkid);(int_of_msgtype Blockdelta,newblkid)];
+				      log_string (Printf.sprintf "Delaying publication of block %s since connected to less than %d peers (minconnstostake), currently connected to only %d peers.\n" (hashval_hexstring newblkid) !Config.minconnstostake (List.length !netconns));
 				      raise StakingPublishBlockPause
 				    end
 			          else
@@ -1732,8 +1715,6 @@ let stakingthread () =
 			           | Some(tht2,sigt2) ->
 				      update_theories thyroot thytree tht2; (* locally update theories *)
 				      update_signatures sigroot sigtree sigt2; (* locally update signatures *)
-				      (** now that we have double checked validity, advertise the block to peers (before burning ltc) **)
-				      advertise_new_block newblkid
 			           | None ->
 				      log_string (Printf.sprintf "New block is not valid\n");
 				      begin
@@ -1762,12 +1743,9 @@ let stakingthread () =
 			         with Exit -> ()
 			       end;
 			       let publish_new_block_2 () =
-			         let hscnt = (try Hashtbl.find localnewheader_sent newblkid with Not_found -> -1) in
-			         let dscnt = (try Hashtbl.find localnewdelta_sent newblkid with Not_found -> -1) in
-			         if max hscnt dscnt < !Config.minconnstostake then
+			         if List.length !netconns < !Config.minconnstostake then
 				   begin
-				     log_string (Printf.sprintf "Delaying publication of block %s until it has been sent to %d peers (minconnstostake), currently header sent to %d peers and delta sent to %d peers.\n" (hashval_hexstring newblkid) !Config.minconnstostake hscnt dscnt);
-				     broadcast_inv [(int_of_msgtype Headers,newblkid);(int_of_msgtype Blockdelta,newblkid)];
+				     log_string (Printf.sprintf "Delaying publication of block %s since connected to less than %d peers (minconnstostake), currently connected to only %d peers.\n" (hashval_hexstring newblkid) !Config.minconnstostake (List.length !netconns));
 				     raise StakingPublishBlockPause
 				   end
 			         else

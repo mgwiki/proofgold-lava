@@ -1,7 +1,7 @@
 # proofgold
 
 Proofgold is a cryptocurrency that rewards the best theorem provers.
-Information about proofgold can be found at proofgold.org.
+Information about proofgold can be found at proofgold.net.
 
 * System Requirements
 
@@ -44,6 +44,27 @@ user's home directory. This can be changed as follows:
 ```
 
 The configure script will create the data directory if it does not already exist.
+
+* Database snapshot
+
+If you start from scratch, it may take a very long time to get into
+sync with the network. A faster alternative is to download a recent snapshot
+of the database. One should be available at http://proofgold.net/dbm
+
+http://proofgold.net/dbm/
+
+After downloading a recent snapshot, e.g., dbm_20250228.tgz,
+you should untar it into the data directory. First remove
+any existing directory dbm and file lastltcblock.
+
+```
+cd ~/.proofgold
+rm -rf dbm lastltcblock
+tar xzvf dbm_20252402.tgz
+```
+
+This ensures that when you start Proofgold the first time
+it will only need to sync with the network since the last snapshot.
 
 * Configuration file
 
