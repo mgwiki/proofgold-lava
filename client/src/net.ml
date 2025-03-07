@@ -607,14 +607,14 @@ let queue_reply cs h mt m = queue_msg_real cs (Some(h)) mt m
 let rec_msg blkh c =
   let (mag0,mag1,mag2,mag3) = if !Config.testnet then (0x50,0x66,0x67,0x54) else (0x50,0x66,0x67,0x4d) in
   let by0 = input_byte c in
-  if not (by0 = mag0) then raise IllformedMsg;
+  if not (by0 = mag0) then (log_string (Printf.sprintf "IllformedMsg by0 %d expected %d" by0 mag0); raise IllformedMsg);
   try
     let by1 = input_byte c in
-    if not (by1 = mag1) then raise IllformedMsg;
+    if not (by1 = mag1) then (log_string (Printf.sprintf "IllformedMsg by1 %d expected %d" by1 mag1); raise IllformedMsg);
     let by2 = input_byte c in
-    if not (by2 = mag2) then raise IllformedMsg;
+    if not (by2 = mag2) then (log_string (Printf.sprintf "IllformedMsg by2 %d expected %d" by2 mag2); raise IllformedMsg);
     let by3 = input_byte c in
-    if not (by3 = mag3) then raise IllformedMsg;
+    if not (by3 = mag3) then (log_string (Printf.sprintf "IllformedMsg by3 %d expected %d" by3 mag3); raise IllformedMsg);
     let replyto =
       let by4 = input_byte c in
       if by4 = 0 then (*** not a reply ***)
@@ -623,15 +623,17 @@ let rec_msg blkh c =
 	let (h,_) = sei_hashval seic (c,None) in
 	(Some(h))
       else
-	raise IllformedMsg
+        (log_string (Printf.sprintf "IllformedMsg by4 %d expected 0 or 1" by4);
+	 raise IllformedMsg)
     in
+    let mtby = input_byte c in
     let mt =
       try
-	msgtype_of_int (input_byte c)
-      with Not_found -> raise IllformedMsg
+	msgtype_of_int mtby
+      with Not_found -> (log_string (Printf.sprintf "IllformedMsg unknown msgtype %d" mtby); raise IllformedMsg)
     in
     let (msl,_) = sei_int32 seic (c,None) in
-    if msl > Int32.add 8192l (Int32.of_int (maxblockdeltasize blkh)) then raise IllformedMsg;
+    if msl > Int32.add 8192l (Int32.of_int (maxblockdeltasize blkh)) then (log_string (Printf.sprintf "message bigger than max block size %ld" msl); raise IllformedMsg);
     let msl = Int32.to_int msl in
     let (mh,_) = sei_hashval seic (c,None) in
     let sb = Buffer.create msl in
@@ -640,11 +642,12 @@ let rec_msg blkh c =
       Buffer.add_char sb (Char.chr by)
     done;
     let ms = Buffer.contents sb in
-    if not (mh = sha256str_hashval ms) then raise IllformedMsg;
+    if not (mh = sha256str_hashval ms) then (log_string "IllformedMsg contents do not hash to message hash"; raise IllformedMsg);
     (replyto,mh,mt,ms)
   with
-  | _ -> (*** consider it an IllformedMsg no matter what the exception raised was ***)
-      raise IllformedMsg
+  | exc -> (*** consider it an IllformedMsg no matter what the exception raised was ***)
+     log_string (Printf.sprintf "IllformedMsg: Unexpected exception %s" (Printexc.to_string exc));
+     raise IllformedMsg
 
 let netlistenerth : Thread.t option ref = ref None
 let onionlistenerth : Thread.t option ref = ref None
