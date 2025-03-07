@@ -796,6 +796,7 @@ let rec process_delta_real sout vfl validate dbp (lbh,ltxh) h ((bhd,bhs),bd) tht
                  let lkey = hashpair lbh ltxh in
 	         Db_validblockvals.dbput lkey true;
 	         sync_last_height := max !sync_last_height currhght;
+                 netblkh := max !netblkh currhght;
 	         update_theories thtr tht newtht;
 	         update_signatures sgtr sgt newsigt;
 	         process_delta_ctree vfl h currhght ((bhd,bhs),bd);
@@ -864,6 +865,7 @@ let process_block_real sout vfl validate dbp (lbh,ltxh) h ((bhd,bhs),bd) thtr th
 	         Db_validblockvals.dbput lh true;
                  broadcast_inv [(int_of_msgtype Headers,h);(int_of_msgtype Blockdelta,h)];
 	         sync_last_height := max !sync_last_height currhght;
+                 netblkh := max !netblkh currhght;
 	         update_theories thtr tht newtht;
 	         update_signatures sgtr sgt newsigt;
 	         process_delta_ctree vfl h currhght ((bhd,bhs),bd);
@@ -1367,35 +1369,41 @@ let rec get_bestblock () =
        begin
 	 Printf.printf "No blocks were created in the past week. Proofgold has reached terminal status.\nSometimes this message means the node is out of sync with ltc.\n"
        end;
-     let rec get_bestblock_r2 p ctipsorig ctips ctipsr cwl =
+     let rec get_bestblock_r2 blkh p ctipsorig ctips ctipsr cwl =
        match ctips with
        | [] ->
           if p = 1 then
-            get_bestblock_r2 2 ctipsorig ctipsorig ctipsr cwl
+            get_bestblock_r2 blkh 2 ctipsorig ctipsorig ctipsr cwl
           else
             get_bestblock_r ctipsr cwl
        | (dbh,lbh,ltxh,ltm,lhght)::ctipr ->
 	  begin
 	    if DbInvalidatedBlocks.dbexists dbh then
-	      get_bestblock_r2 p ctipsorig ctipr ctipsr (ConsensusWarningInvalid(dbh)::cwl)
+	      get_bestblock_r2 blkh p ctipsorig ctipr ctipsr (ConsensusWarningInvalid(dbh)::cwl)
 	    else if DbBlacklist.dbexists dbh then
-	      get_bestblock_r2 p ctipsorig ctipr ctipsr (ConsensusWarningBlacklist(dbh)::cwl)
+	      get_bestblock_r2 blkh p ctipsorig ctipr ctipsr (ConsensusWarningBlacklist(dbh)::cwl)
 	    else
 	      begin
 		try
 		  let (lbk,ltx) = get_burn dbh in
                   if p = 1 then
                     if Hashtbl.mem localpreferred dbh then
-		      (Some(dbh,lbk,ltx),cwl)
+                      begin
+                        netblkh := blkh;
+		        (Some(dbh,lbk,ltx),cwl)
+                      end
                     else
-		      get_bestblock_r2 p ctipsorig ctipr ctipsr cwl
+		      get_bestblock_r2 blkh p ctipsorig ctipr ctipsr cwl
                   else
 		    if Db_validblockvals.dbexists (hashpair lbk ltx) then
-		      (Some(dbh,lbk,ltx),cwl)
+                      begin
+                        netblkh := blkh;
+		        (Some(dbh,lbk,ltx),cwl)
+                      end
 		    else
-		      get_bestblock_r2 p ctipsorig ctipr ctipsr (ConsensusWarningMissing(dbh,lbk,ltx)::cwl)
+		      get_bestblock_r2 blkh p ctipsorig ctipr ctipsr (ConsensusWarningMissing(dbh,lbk,ltx)::cwl)
 		with Not_found ->
-		  get_bestblock_r2 p ctipsorig ctipr ctipsr (ConsensusWarningNoBurn(dbh)::cwl)
+		  get_bestblock_r2 blkh p ctipsorig ctipr ctipsr (ConsensusWarningNoBurn(dbh)::cwl)
 	      end
 	  end
      and get_bestblock_r ctipsl cwl =
@@ -1408,8 +1416,8 @@ let rec get_bestblock () =
 	    end
 	  else
 	    (None,cwl)
-       | (_,ctips)::ctipsr ->
-	  get_bestblock_r2 1 ctips ctips ctipsr cwl
+       | (blkh,ctips)::ctipsr ->
+	  get_bestblock_r2 blkh 1 ctips ctips ctipsr cwl
      in
      let cwl =
        let tm = ltc_medtime() in
