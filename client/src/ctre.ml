@@ -1544,10 +1544,7 @@ let ctree_rights_balanced_postjan2025 tr ownr rtot1 rtot2 rtot3 outpl =
   | None -> false (*** No owner, in this case we shouldn't even be here ***)
 
 let ctree_rights_balanced blkh tr ownr rtot1 rtot2 rtot3 outpl =
-  if blkh < Utils.jan2025forkheight then
-    ctree_rights_balanced_prejan2025 tr ownr rtot1 rtot2 rtot3 outpl
-  else
-    ctree_rights_balanced_postjan2025 tr ownr rtot1 rtot2 rtot3 outpl
+  ctree_rights_balanced_postjan2025 tr ownr rtot1 rtot2 rtot3 outpl
 
 let rec hlist_full_approx exp req hl =
   match hl with
