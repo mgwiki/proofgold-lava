@@ -4732,7 +4732,7 @@ let initialize_commands () =
 	with e -> Printf.fprintf f "Exception: %s\n" (Printexc.to_string e)
       end;
       close_out_noerr f);
-  ac "ltcstatus" "ltcstatus [<ltcblockhash>]" "Print the proofgold blocks burned into the ltc blockchain from the past week.\nThe topmost is the current best block."
+  ac "ltcstatusfull" "ltcstatusfull [<ltcblockhash>]" "Print the proofgold blocks burned into the ltc blockchain from the past week.\nThe topmost is the current best block.\nThis includes invalid blocks."
     (fun oc al ->
       let h =
 	match al with
@@ -4779,6 +4779,62 @@ let initialize_commands () =
 		      Printf.fprintf oc "* %s (missing delta, header not fully validated) %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght
 		  else
 		    Printf.fprintf oc "* %s (missing header) %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght)
+	    zl)
+	zll);
+  ac "ltcstatus" "ltcstatus [<ltcblockhash>]" "Print the proofgold blocks burned into the ltc blockchain from the past week.\nThe topmost is the current best block.\nThis does not show invalid blocks."
+    (fun oc al ->
+      let h =
+	match al with
+	| [hh] -> hexstring_hashval hh
+	| [] ->
+	    Printf.fprintf oc "ltcbest %s\n" (hashval_hexstring !ltc_bestblock);
+	    !ltc_bestblock
+	| _ -> raise BadCommandForm
+      in
+      let (lastchangekey,zll) = ltcpfgstatus_dbget h in
+      let tm = ltc_medtime() in
+      if zll = [] && tm > Int64.add !Config.genesistimestamp 604800L then
+	begin
+	  Printf.fprintf oc "No blocks were created in the past week. Proofgold has reached terminal status.\nThe only recovery possible for the network is a hard fork.\nSometimes this message means the node is out of sync with ltc.\n"
+	end;
+      let i = ref 0 in
+      List.iter
+	(fun (dhght,zl) ->
+	  incr i;
+          let shown = ref false in
+          let show () =
+            if not !shown then
+              begin
+	        Printf.fprintf oc "%d [%Ld].\n" !i dhght;
+                shown := true
+              end
+          in
+	  List.iter
+	    (fun (dbh,lbh,ltx,ltm,lhght) ->
+	      if DbBlacklist.dbexists dbh then
+                ()
+	      else if DbInvalidatedBlocks.dbexists dbh then
+                ()
+	      else
+                let lh = hashpair lbh ltx in
+                if Db_validblockvals.dbexists lh then
+                  if Db_validheadervals.dbexists lh then
+		    (show (); Printf.fprintf oc "+ %s %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght)
+                  else
+                    (show (); Printf.fprintf oc "? %s %s %s %Ld %Ld (invariant broken: valid delta, but not header)\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght)
+	        else if Db_validheadervals.dbexists lh then
+		  if DbBlockDelta.dbexists dbh then
+		    (show (); Printf.fprintf oc "* %s (have delta, but not fully validated) %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght)
+		  else
+		    (show (); Printf.fprintf oc "* %s (missing delta) %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght)
+	        else
+		  if DbBlockHeader.dbexists dbh then
+		    if DbBlockDelta.dbexists dbh then
+		      (show (); Printf.fprintf oc "* %s (have block, but neither header nor delta fully valided) %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght)
+		    else
+		      (show (); Printf.fprintf oc "* %s (missing delta, header not fully validated) %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght)
+		  else
+		    (show (); Printf.fprintf oc "* %s (missing header) %s %s %Ld %Ld\n" (hashval_hexstring dbh) (hashval_hexstring lbh) (hashval_hexstring ltx) ltm lhght))
 	    zl)
 	zll);
   ac "ltcgettxinfo" "ltcgettxinfo <txid>" "Get proofgold related information about an ltc burn tx."
