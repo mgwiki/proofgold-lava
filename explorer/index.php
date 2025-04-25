@@ -43,6 +43,10 @@ foreach ($jsonc->bounties as $d) {
   <tr>
     <td><table><tr><th><a href="map.php">Recent Connections</a> (Currently <?= strtok(pgopen("getpeerinfo"),"\n") ?>)</th></tr><tr><td><a href="map.php"><img src="map.jpg"/></a> </td></tr></table></td>
 <!--    <td><table><tr><th>Addresses</th></tr><tr><td></td></tr></table></td>-->
+    <td><table>
+       <tr><th>Chain</th></tr><tr><td><a href="Graph.php">Graph</a></td></tr><tr><tr/>
+       <tr><th>Submit</th></tr><tr><td><a href="Submit.php">New transaction</a></td></tr>
+   </table></td>
   </tr>
   <tr>
 <!--  <td><table><tr><th>Recent</th></tr><tr><td><a href="msg.php">Messages</a></td></tr></table></td>
