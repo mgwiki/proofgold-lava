@@ -6,6 +6,9 @@ $o = $json->dbdata[0];
 if ($o->type == "termid") {
     header('Location: Ad.php?b=' . $o->termaddress); die();
 }
+if (($o->type != "obj") && ($o->type != "prop")) {
+    header('Location: q.php?b=' . $_GET["b"]); die();
+}
 include 'i/search.php';
 ?>
 <h1>Proofgold <?= ($o->type == "prop") ? "Proposition" : "Object" ?> </h1>
