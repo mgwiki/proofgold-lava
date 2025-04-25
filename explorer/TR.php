@@ -2,6 +2,10 @@
 include 'i/head.php';
 include 'i/pg.php';
 $json = pgj("querymg " . $_GET["b"]);
+$v = $json->dbdata[0];
+if ($v->type != "termroot") {
+    header('Location: q.php?b=' . $_GET["b"]); die();
+}
 $lastthy = "";
 include 'i/search.php';
 ?>
