@@ -144,11 +144,11 @@ function doc($dc,$docaddr,$doci) {
         $output .= anchor($dc->objid) . "Definition " . nameordefault($dc->objid,$dc->defaultnames) . " := ";
         $output .= ($dc->def);
     } else if($dc->docitemcase == 'docpfof') {
-        $output .= anchor($dc->propid) . "Theorem " . nameordefault($dc->propid,$dc->defaultnames) . " : ";
+        $output .= anchor($dc->propid) . "Theorem " . nameordefault($dc->propid,$dc->defaultnames) . " : " . $dc->prop;
         //        $output .= ($dc->prop . " <a href=\"sp.php?pu=" . $docaddr . "&it=" . $dc->propid . "\">(proof)</a>");
 
         //      $output .= "<div class='pfwrap'>\n";
-      $output .= "<div class='note'></div><div class='pfabbrev' id='loc_" . $docaddr . "_" . $doci . "_0_0' onclick='g(this," . '"' . $docaddr . '"' . "," . $doci . ",0,0)'>...</div></div>\n";
+      $output .= "<div class='note'></div><div class='pfabbrev' id='loc_" . $docaddr . "_" . $doci . "_0_0' onclick='g(this," . '"' . $docaddr . '"' . "," . $doci . ",0,0)'>...</div>\n";
       //$output .= "</div>\n";
       //      $output .= "</div>\n";
 
