@@ -2,8 +2,11 @@
 include 'i/head.php';
 include 'i/pg.php';
 $json = pgj("querymg " . $_GET["b"]);
-if (!isset($json->response) || $json->response != "known" || $json->dbdata[0]->type != "block") {echo "ERROR incorrect querymg answer\n"; die();}
+if (!isset($json->response) || $json->response != "known") {echo "ERROR incorrect querymg answer\n"; die();}
 $v = $json->dbdata[0];
+if ($v->type != "block") {
+    header('Location: q.php?b=' . $_GET["b"]); die();
+}
 include 'i/search.php';
 ?>
 <h1>Proofgold Block</h1>
