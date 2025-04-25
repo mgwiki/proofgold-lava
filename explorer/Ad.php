@@ -2,6 +2,9 @@
 include 'i/head.php';
 include 'i/pg.php';
 $json = pgj("querymg " . $_GET["b"]);
+if ($json->dbdata[0]->response != "pfgaddress") {
+    header('Location: q.php?b=' . $_GET["b"]); die();
+}
 $v = $json->info;
 include 'i/search.php';
 ?>
